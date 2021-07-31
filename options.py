@@ -17,13 +17,13 @@ def args_parser():
                         help="number of communication rounds")
     parser.add_argument('--batch_size', type=int, default=64,
                         help="BATCH_SIZE")
-    parser.add_argument('--num_users', type=int, default=10,
+    parser.add_argument('--num_users', type=int, default=1,
                         help="number of users: K")
     parser.add_argument('--frac', type=float, default=0.1,
                         help='the fraction of clients: C')
-    parser.add_argument('--local_ep', type=int, default=2,
+    parser.add_argument('--local_ep', type=int, default=1,
                         help="the number of local epochs: E")
-    parser.add_argument('--local_batch_size', type=int, default=64,
+    parser.add_argument('--local_batch_size', type=int, default=10000,
                         help="local batch size: B")
     parser.add_argument('--lr', type=float, default=0.01,
                         help='learning rate')
@@ -31,6 +31,8 @@ def args_parser():
                         help='SGD momentum')
     parser.add_argument('--weight_decay', type=float, default=0.0004,
                         help='weight_decay')
+    parser.add_argument('--fedType', type=str, default='fedMA',
+                        help='fedAvg or fedMA')
 
     # model arguments
     parser.add_argument('--model', type=str, default='cnn', help='model name')
