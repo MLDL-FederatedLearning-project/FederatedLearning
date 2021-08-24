@@ -49,6 +49,8 @@ class LocalUpdate(object):
 
     def update_weights(self, model, global_round):
         # Set mode to train model
+        print("train:",model)
+        print("train:",model.train())
         model.train()
         epoch_loss = []
 

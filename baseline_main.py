@@ -43,7 +43,7 @@ if __name__ == '__main__':
     # Set the model to train and send it to device.
     global_model.to(device)
     global_model.train()
-    print(global_model)
+    print("global model",global_model)
 
     # Training
     # Set optimizer and criterion

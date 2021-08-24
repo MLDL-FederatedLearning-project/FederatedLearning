@@ -18,7 +18,11 @@ from options import args_parser
 from update import LocalUpdate, test_inference
 from models import CNN
 from utils import  average_weights, exp_details
-from dataset_split import get_dataset, get_user_groups, get_user_groups_alpha
+from dataset_split import get_dataset, get_user_groups
+from models_fedma import pdm_prepare_weights,pdm_prepare_freq,partition_data,compute_pdm_net_accuracy
+from models_fedma import layer_group_descent as pdm_multilayer_group_descent
+from itertools import product
+
 from sampling import random_number_images, non_iid_unbalanced, iid_unbalanced, non_iid_balanced, iid_unbalanced
 
 
@@ -45,8 +49,8 @@ if __name__ == '__main__':
 
     # load dataset and user groups
     train_dataset, test_dataset = get_dataset(args)
-    #user_groups = get_user_groups(args)
-    user_groups=get_user_groups_alpha(args)
+    user_groups = get_user_groups(args)
+    #user_groups=get_user_groups_alpha(args)
 
 
     # BUILD MODEL
@@ -81,17 +85,58 @@ if __name__ == '__main__':
 
 
         for idx in idxs_users:
+            print(idx)
+            local_model = LocalUpdate(args=args, dataset=train_dataset,
+                                  idxs=user_groups[idx], logger=logger)
 
-                  local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                      idxs=user_groups[idx], logger=logger)
+            w, loss = local_model.update_weights(model=copy.deepcopy(global_model), global_round=round)
 
-                  w, loss = local_model.update_weights(model=copy.deepcopy(global_model), global_round=round)
-                  local_weights.append(copy.deepcopy(w))
-                  local_losses.append(copy.deepcopy(loss))
-
+            local_weights.append(copy.deepcopy(w))
+            local_losses.append(copy.deepcopy(loss))
         # update global weights
-        global_weights = average_weights(local_weights)
+        if args.comm_type == "fedavg":
+            global_weights = average_weights(local_weights)
+        elif args.comm_type == "fedma":
+            batch_weights = pdm_prepare_weights(global_model)
+            n_classes = args.net_config
+            print("n classes",len(n_classes), type(n_classes))
+            n_classes = n_classes[-1]
+            cls_freqs = partition_data(train_dataset, test_dataset, args.n_nets)
+            batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
+            gammas = [1.0, 1e-3, 50.0]
+            sigmas = [1.0, 0.1, 0.5]
+            sigma0s = [1.0, 10.0]
 
+            for gamma, sigma, sigma0 in product(gammas, sigmas, sigma0s):
+                print("Gamma: ", gamma, "Sigma: ", sigma, "Sigma0: ", sigma0)
+                hungarian_weights = pdm_multilayer_group_descent(
+                    batch_weights, sigma0_layers=sigma0, sigma_layers=sigma, batch_frequencies=batch_freqs, it=0,
+                    gamma_layers=gamma
+                )
+                train_dataset, test_dataset = get_dataset(args)
+                train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes)
+
+                key = (sigma0, sigma, gamma)
+                res[key] = {}
+                res[key]['shapes'] = list(map(lambda x: x.shape, hungarian_weights))
+                res[key]['train_accuracy'] = train_acc
+                res[key]['test_accuracy'] = test_acc
+
+                print('Sigma0: %s. Sigma: %s. Shapes: %s, Accuracy: %f' % (
+                    str(sigma0), str(sigma), str(res[key]['shapes']), test_acc))
+
+                if train_acc > best_train_acc:
+                    best_test_acc = test_acc
+                    best_train_acc = train_acc
+                    best_weights = hungarian_weights
+                    best_sigma = sigma
+                    best_gamma = gamma
+                    best_sigma0 = sigma0
+
+                print('Best sigma0: %f, Best sigma: %f, Best Gamma: %f, Best accuracy (Test): %f. Training acc: %f' % (
+                    best_sigma0, best_sigma, best_gamma, best_test_acc, best_train_acc))
+        else:
+            print("you did not choose a correct communication type")
         # update global weights
         global_model.load_state_dict(global_weights)
 
@@ -126,7 +171,9 @@ if __name__ == '__main__':
     print("|---- Test Accuracy: {:.2f}%".format(test_acc))
 
     #Saving the objects train_loss and train_accuracy
-    file_name = 'C:/Users/Oana Madalina Breban/Downloads/FederatedLearning-main/FederatedLearning-main/{}_{}_{}_{}_{}_{}_{}_alpha{}.pkl'.\
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+
+    file_name = dir_path+'/{}_{}_{}_{}_{}_{}_{}_alpha{}.pkl'.\
        format(args.dataset, args.model, args.communication_rounds, args.num_users, args.frac,
                args.local_ep, args.local_batch_size, args.alpha)
 
@@ -146,7 +193,7 @@ if __name__ == '__main__':
     plt.plot(range(len(train_loss)), train_loss, color='r')
     plt.ylabel('Training loss')
     plt.xlabel('Communication Rounds')
-    plt.savefig('C:/Users/Oana Madalina Breban/Downloads/FederatedLearning-main/FederatedLearning-main/loss_federated.png'.
+    plt.savefig(dir_path+'/loss_federated.png'.
                 format(args.dataset, args.model, args.epochs, args.frac,
                         args.iid, args.local_ep, args.local_batch_size))
     #plt.show()
@@ -157,7 +204,7 @@ if __name__ == '__main__':
     plt.plot(range(len(train_accuracy)), train_accuracy, color='k')
     plt.ylabel('Average Accuracy')
     plt.xlabel('Communication Rounds')
-    plt.savefig('C:/Users/Oana Madalina Breban/Downloads/FederatedLearning-main/FederatedLearning-main/accuracy_federated.png'.
+    plt.savefig(dir_path+'/accuracy_federated.png'.
                 format(args.dataset, args.model, args.epochs, args.frac,
                        args.iid, args.local_ep, args.local_batch_size))
     #plt.show()

@@ -7,7 +7,7 @@ def args_parser():
     parser = argparse.ArgumentParser()
 
     # federated arguments (Notation for the arguments followed from paper)
-    parser.add_argument('--data_dir', type=str, default="/Users/fabiana/PycharmProjects/FED_paper/",
+    parser.add_argument('--data_dir', type=str, default=dir_path,
                         help="directory of the project")
     parser.add_argument('--centralized', type=int, default=1,
                         help="default value = 1 for the centralized model, for the federated put 0")
@@ -17,13 +17,13 @@ def args_parser():
                         help="number of communication rounds")
     parser.add_argument('--batch_size', type=int, default=64,
                         help="BATCH_SIZE")
-    parser.add_argument('--num_users', type=int, default=1,
+    parser.add_argument('--num_users', type=int, default=10,
                         help="number of users: K")
     parser.add_argument('--frac', type=float, default=0.1,
                         help='the fraction of clients: C')
-    parser.add_argument('--local_ep', type=int, default=1,
+    parser.add_argument('--local_ep', type=int, default=2,
                         help="the number of local epochs: E")
-    parser.add_argument('--local_batch_size', type=int, default=10000,
+    parser.add_argument('--local_batch_size', type=int, default=64,
                         help="local batch size: B")
     parser.add_argument('--lr', type=float, default=0.01,
                         help='learning rate')
@@ -31,8 +31,6 @@ def args_parser():
                         help='SGD momentum')
     parser.add_argument('--weight_decay', type=float, default=0.0004,
                         help='weight_decay')
-    parser.add_argument('--fedType', type=str, default='fedMA',
-                        help='fedAvg or fedMA')
 
     # model arguments
     parser.add_argument('--model', type=str, default='cnn', help='model name')
@@ -51,6 +49,8 @@ def args_parser():
     parser.add_argument('--max_pool', type=str, default='True',
                         help="Whether use max pooling rather than \
                         strided convolutions")
+    parser.add_argument('--alpha', type=int, default=0.95,
+                        help="for personalization")
 
     # other arguments
     parser.add_argument('--dataset', type=str, default='cifar10', help="name \
@@ -100,5 +100,6 @@ def args_parser():
                         help='which type of communication strategy is going to be used: fedma/fedavg/...layerwise/blockwise')
     parser.add_argument('--comm_round', type=int, default=2,
                         help='how many round of communications we shoud use')
+    parser.add_argument('--net_config', type=list, default=[3072, 100, 10])
     args = parser.parse_args()
     return args
