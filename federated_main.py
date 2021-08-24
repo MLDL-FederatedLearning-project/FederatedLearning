@@ -20,7 +20,7 @@ from models import CNN
 from utils import  average_weights, exp_details
 from dataset_split import get_dataset, get_user_groups
 from models_fedma import pdm_prepare_weights,pdm_prepare_freq,partition_data,compute_pdm_net_accuracy
-from models_fedma import layer_group_descent as pdm_multilayer_group_descent
+from models_fedma import pdm_multilayer_group_descent
 from itertools import product
 
 from sampling import random_number_images, non_iid_unbalanced, iid_unbalanced, non_iid_balanced, iid_unbalanced
@@ -102,7 +102,9 @@ if __name__ == '__main__':
             print("n classes",len(n_classes), type(n_classes))
             n_classes = n_classes[-1]
             cls_freqs = partition_data(train_dataset, test_dataset, args.n_nets)
+            print("CLS freq",cls_freqs)
             batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
+            print("batch frequencies", batch_freqs)
             gammas = [1.0, 1e-3, 50.0]
             sigmas = [1.0, 0.1, 0.5]
             sigma0s = [1.0, 10.0]
@@ -117,7 +119,10 @@ if __name__ == '__main__':
                 train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes)
 
                 key = (sigma0, sigma, gamma)
-                res[key] = {}
+                res = {}
+                """for k in key:
+                we should discuss about it later on
+                """
                 res[key]['shapes'] = list(map(lambda x: x.shape, hungarian_weights))
                 res[key]['train_accuracy'] = train_acc
                 res[key]['test_accuracy'] = test_acc

@@ -2,8 +2,10 @@ import numpy as np
 import torchvision.transforms as transforms
 from options import args_parser
 from dataset_split import get_dataset
+from models import CNNContainer
 
 def pdm_prepare_weights(net):
+    print("net ", net)
     weights = []
 
     layer_i = 1
@@ -169,7 +171,7 @@ def patch_weights(w_j, L_next, assignment_j_c):
     return new_w_j
 
 
-def layer_group_descent(batch_weights, batch_frequencies, sigma_layers, sigma0_layers, gamma_layers, it,
+def pdm_multilayer_group_descent(batch_weights, batch_frequencies, sigma_layers, sigma0_layers, gamma_layers, it,
                         assignments_old=None):
 
     n_layers = int(len(batch_weights[0]) / 2)
@@ -191,8 +193,15 @@ def layer_group_descent(batch_weights, batch_frequencies, sigma_layers, sigma0_l
     else:
         last_layer_const = []
         total_freq = sum(batch_frequencies)
+        print("sum frequencies",total_freq)
         for f in batch_frequencies:
-            last_layer_const.append(f / total_freq)
+            print("f constant",f)
+            result = f / total_freq
+            if result != "nan":
+                last_layer_const.append(result)
+            else:
+                last_layer_const.append(0)
+        print("last layer",last_layer_const)
 
     sigma_bias_layers = sigma_layers
     sigma0_bias_layers = sigma0_layers
@@ -286,7 +295,7 @@ def load_cifar10_data(datadir):
 
 def partition_data(train, test, n_nets, alpha=0.5):
     X_train, y_train, X_test, y_test = load_cifar10_data(train)
-    n_train =  X_train.shape[0]
+    n_train = X_train.shape[0]
     idxs = np.random.permutation(n_train)
     batch_idxs = np.array_split(idxs, n_nets)
     net_dataidx_map = {i: batch_idxs[i] for i in range(n_nets)}
@@ -343,18 +352,20 @@ def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_cou
 def compute_pdm_net_accuracy(weights, train_dl, test_dl, n_classes):
 
     dims = []
-    print("weights",weights)
+    print("weights", weights)
+    print("weights shape", np.shape(weights))
     x= np.array(weights[0])
     dims.append(x.shape[0])
-
+    print("dims", dims)
     for i in range(0, len(weights), 2):
         x = np.array(weights[i])
         dims.append(x.shape[1])
+    print("dims",dims)
     ip_dim = dims[0]
-    p_dim = dims[-1]
+    op_dim = dims[-1]
     hidden_dims = dims[1:-1]
 
-    pdm_net = FcNet(ip_dim, hidden_dims, op_dim)
+    pdm_net = CNNContainer(ip_dim, hidden_dims, op_dim,input_channel=3,kernel_size=5)
     statedict = pdm_net.state_dict()
 
     # print(pdm_net)
