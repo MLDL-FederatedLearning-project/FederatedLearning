@@ -99,22 +99,25 @@ if __name__ == '__main__':
         elif args.comm_type == "fedma":
             batch_weights = pdm_prepare_weights(global_model)
             n_classes = args.net_config
-            print("n classes",len(n_classes), type(n_classes))
+            #print("n classes",len(n_classes), type(n_classes))
             n_classes = n_classes[-1]
             cls_freqs = partition_data(train_dataset, test_dataset, args.n_nets)
-            print("CLS freq",cls_freqs)
+            #cls_freqs = non_iid_unbalanced(args,server_id)
+            #print("CLS freq",cls_freqs)
             batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
-            print("batch frequencies", batch_freqs)
+            #print("batch frequencies", batch_freqs)
             gammas = [1.0, 1e-3, 50.0]
             sigmas = [1.0, 0.1, 0.5]
             sigma0s = [1.0, 10.0]
 
             for gamma, sigma, sigma0 in product(gammas, sigmas, sigma0s):
                 print("Gamma: ", gamma, "Sigma: ", sigma, "Sigma0: ", sigma0)
-                hungarian_weights = pdm_multilayer_group_descent(
+                hungarian_weights , _ = pdm_multilayer_group_descent(
                     batch_weights, sigma0_layers=sigma0, sigma_layers=sigma, batch_frequencies=batch_freqs, it=0,
                     gamma_layers=gamma
                 )
+                """with open("hungarian_weights.txt", "w") as output:
+                    output.write(str(hungarian_weights))"""
                 train_dataset, test_dataset = get_dataset(args)
                 train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes)
 

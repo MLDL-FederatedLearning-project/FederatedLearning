@@ -30,8 +30,8 @@ class CNN(nn.Module):
 class CNNContainer(nn.Module):
     def __init__(self, input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim):
         super(CNNContainer, self).__init__()
-        self.conv1 = nn.Conv2d(input_channel, num_filters[1], kernel_size, 1) #3,64
-        self.conv2 = nn.Conv2d(num_filters[0], num_filters[1], kernel_size, 1) #new number,64
+        self.conv1 = nn.Conv2d(input_channel, num_filters, kernel_size, 1) #3,64
+        self.conv2 = nn.Conv2d(num_filters, num_filters, kernel_size, 1) #new number,64
 
         self.fc1 = nn.Linear(input_dim, hidden_dims[0]) #1600, 384
         self.fc2 = nn.Linear(hidden_dims[0], hidden_dims[1])#384,192
