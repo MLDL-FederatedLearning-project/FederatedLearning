@@ -99,6 +99,7 @@ if __name__ == '__main__':
             global_weights = average_weights(local_weights)
         elif args.comm_type == "fedma":
             batch_weights = pdm_prepare_weights(global_model)
+            print("batch_weights",batch_weights)
             n_classes = args.net_config
             #print("n classes",len(n_classes), type(n_classes))
             n_classes = n_classes[-1]
@@ -117,8 +118,9 @@ if __name__ == '__main__':
                     batch_weights, sigma0_layers=sigma0, sigma_layers=sigma, batch_frequencies=batch_freqs, it=0,
                     gamma_layers=gamma
                 )
-                """with open("hungarian_weights.txt", "w") as output:
-                    output.write(str(hungarian_weights))"""
+                print("hungarian weights",hungarian_weights)
+                with open("hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".txt", "w") as output:
+                    output.write(str(hungarian_weights))
                 #train_dataset, test_dataset = get_dataset(args)
                 train_dataset, validloader = get_train_valid_loader(args,
                                                                   valid_size=0.2,
@@ -127,7 +129,7 @@ if __name__ == '__main__':
                 test_dataset = get_test_loader(args,
                                              shuffle=True,
                                              pin_memory=False)
-                train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes)
+                train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes,cls_freqs)
                 res = {}
                 key = (sigma0, sigma, gamma)
                 res[key] = {}
