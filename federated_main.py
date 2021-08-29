@@ -22,6 +22,7 @@ from dataset_split import get_dataset, get_user_groups
 from models_fedma import pdm_prepare_weights,pdm_prepare_freq,partition_data,compute_pdm_net_accuracy
 from models_fedma import pdm_multilayer_group_descent
 from itertools import product
+from dataset_split import get_train_valid_loader, get_test_loader
 
 from sampling import random_number_images, non_iid_unbalanced, iid_unbalanced, non_iid_balanced, iid_unbalanced
 
@@ -103,7 +104,7 @@ if __name__ == '__main__':
             n_classes = n_classes[-1]
             cls_freqs = partition_data(train_dataset, test_dataset, args.n_nets)
             #cls_freqs = non_iid_unbalanced(args,server_id)
-            #print("CLS freq",cls_freqs)
+            print("CLS freq",cls_freqs)
             batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
             #print("batch frequencies", batch_freqs)
             gammas = [1.0, 1e-3, 50.0]
@@ -118,11 +119,18 @@ if __name__ == '__main__':
                 )
                 """with open("hungarian_weights.txt", "w") as output:
                     output.write(str(hungarian_weights))"""
-                train_dataset, test_dataset = get_dataset(args)
+                #train_dataset, test_dataset = get_dataset(args)
+                train_dataset, validloader = get_train_valid_loader(args,
+                                                                  valid_size=0.2,
+                                                                  shuffle=True,
+                                                                  pin_memory=False)
+                test_dataset = get_test_loader(args,
+                                             shuffle=True,
+                                             pin_memory=False)
                 train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes)
-
-                key = (sigma0, sigma, gamma)
                 res = {}
+                key = (sigma0, sigma, gamma)
+                res[key] = {}
                 """for k in key:
                 we should discuss about it later on
                 """
@@ -132,7 +140,7 @@ if __name__ == '__main__':
 
                 print('Sigma0: %s. Sigma: %s. Shapes: %s, Accuracy: %f' % (
                     str(sigma0), str(sigma), str(res[key]['shapes']), test_acc))
-
+                best_test_acc, best_train_acc, best_weights, best_sigma, best_gamma, best_sigma0 = -1, -1, None, -1, -1, -1
                 if train_acc > best_train_acc:
                     best_test_acc = test_acc
                     best_train_acc = train_acc

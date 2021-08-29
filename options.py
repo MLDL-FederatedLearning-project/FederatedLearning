@@ -84,7 +84,7 @@ def args_parser():
                         help='the approximate fixed number of data points we will have on each local worker')
     parser.add_argument('--partition_step', type=int, default=0, metavar='PS',
                         help='how many sub groups we are going to use for a particular training process')
-    parser.add_argument('--n_nets', type=int, default=3, metavar='NN',
+    parser.add_argument('--n_nets', type=int, default=6, metavar='NN',
                         help='number of workers in a distributed cluster')
     parser.add_argument('--retrain', type=bool, default=False,
                         help='whether to retrain the model or load model locally')
