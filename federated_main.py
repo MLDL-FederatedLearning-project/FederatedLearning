@@ -84,18 +84,18 @@ if __name__ == '__main__':
         m = max(int(args.frac * args.num_users), 1)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
-
-        for idx in idxs_users:
-            print(idx)
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                  idxs=user_groups[idx], logger=logger)
-
-            w, loss = local_model.update_weights(model=copy.deepcopy(global_model), global_round=round)
-
-            local_weights.append(copy.deepcopy(w))
-            local_losses.append(copy.deepcopy(loss))
-        # update global weights
         if args.comm_type == "fedavg":
+            for idx in idxs_users:
+                print(idx)
+                local_model = LocalUpdate(args=args, dataset=train_dataset,
+                                      idxs=user_groups[idx], logger=logger)
+
+                w, loss = local_model.update_weights(model=copy.deepcopy(global_model), global_round=round)
+
+                local_weights.append(copy.deepcopy(w))
+                local_losses.append(copy.deepcopy(loss))
+            # update global weights
+
             global_weights = average_weights(local_weights)
         elif args.comm_type == "fedma":
             batch_weights = pdm_prepare_weights(global_model)
@@ -118,7 +118,7 @@ if __name__ == '__main__':
                     batch_weights, sigma0_layers=sigma0, sigma_layers=sigma, batch_frequencies=batch_freqs, it=0,
                     gamma_layers=gamma
                 )
-                print("hungarian weights",hungarian_weights)
+                #print("hungarian weights",hungarian_weights)
                 with open("hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".txt", "w") as output:
                     output.write(str(hungarian_weights))
                 #train_dataset, test_dataset = get_dataset(args)
