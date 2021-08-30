@@ -278,8 +278,19 @@ def pdm_multilayer_group_descent(batch_weights, batch_frequencies, sigma_layers,
 
 def record_net_data_stats(y_train, net_dataidx_map):
     net_cls_counts = {}
+    print("Y train",y_train,"net data index map",net_dataidx_map)
     for net_i, dataidx in net_dataidx_map.items():
+        print("net i",net_i,"data index",dataidx)
         unq, unq_cnt = np.unique(y_train[net_i], return_counts=True)
+        counting = {}
+        for each in dataidx:
+            if y_train[each] in counting:
+                x = int(counting[y_train[each]])
+                counting[y_train[each]] = x + 1
+            else:
+                counting[y_train[each]] = 1
+        print("counting",counting)
+        #print("uniqueness", unq, "uniqueness count",unq_cnt)
         tmp = {unq[i]: unq_cnt[i] for i in range(len(unq))}
         net_cls_counts[net_i] = tmp
 
@@ -305,8 +316,9 @@ def partition_data(train, test, n_nets, alpha=0.5):
     #print("batch index",batch_idxs)
     net_dataidx_map = {i: batch_idxs[i] for i in range(n_nets)}
     #print("net data index", net_dataidx_map)
+
     traindata_cls_counts = record_net_data_stats(y_train, net_dataidx_map)
-    #print("train data cls count",traindata_cls_counts)
+    print("train data cls count",traindata_cls_counts)
     return traindata_cls_counts
 
 
@@ -337,9 +349,8 @@ def prepare_sanity_weights(n_classes, net_cnt):
 
 
 def normalize_weights(weights):
-    print("weights come to normalization",weights)
     Z = np.array([])
-    eps = 1e-3
+    eps = 1e-6
     weights_norm = {}
 
     for _, weight in weights.items():
@@ -347,10 +358,12 @@ def normalize_weights(weights):
             Z = weight.data.numpy()
         else:
             Z = Z + weight.data.numpy()
-    print("z in normalize",Z)
+
     for mi, weight in weights.items():
         weights_norm[mi] = weight / torch.from_numpy(Z + eps)
+
     print("weights normalized",weights_norm)
+    input()
     return weights_norm
 
 """ToDo :  Check the prediction which is 0 but it added to correct predictions"""
@@ -359,26 +372,7 @@ def get_weighted_average_pred(models: list, weights: dict, images,labels,optimiz
     criterion = torch.nn.NLLLoss()
     # Compute the predictions
     for model_i, model in enumerate(models):
-        #print("model_i",model_i,"model",model)
-        #print("x value",x)
-        #print("x shape",x.shape)
-        #print("x",x)
-        #x = np.expand_dims(x, 1)  # if numpy array
-        #x = torch.unsqueeze(x,0)# if torch tensor
-        #images = images.expand([64, 3, 32, 32])
-        #optimizer.zero_grad()
-        #print("x",x)
-        #print("x shape",x.shape)
-        #print(model(images))
-        out = F.log_softmax(model(images), dim=1)  # (N, C)
-        #print("out",out.shape)
-        #out = model(images)
-        #loss = criterion(out, labels)
-        #loss.backward()
-        #optimizer.step()
-        #out = model(x)  # (N, C)
-        #print("out", out.shape)
-        #print("output ", out)
+        out = F.log_softmax(model(images), dim=-1)  # (N, C)
         if out_weighted is None:
             out_weighted = (out * weights[model_i])
         else:
@@ -409,13 +403,12 @@ def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_cou
     weights_norm = normalize_weights(weights_list)
 
     with torch.no_grad():
-        #print("data loader",dataloader)
         for batch_idx, (images, target) in enumerate(dataloader):
             target = target.long()
             #print("models",models)
             #print("weights norm",weights_norm)
             out = get_weighted_average_pred(models, weights_norm, images, target, optimizer)
-            print("out",out)
+            #print("out",out)
             _, pred_label = torch.min(out, 1)
             pred_label = pred_label.view(-1)
             #print("pred label",pred_label)
