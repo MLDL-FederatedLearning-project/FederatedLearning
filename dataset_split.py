@@ -83,20 +83,14 @@ def get_train_valid_loader(args,
     train_idx, valid_idx = indices[split:], indices[:split]
     train_sampler = SubsetRandomSampler(train_idx)
     valid_sampler = SubsetRandomSampler(valid_idx)
-    if args.centralized == 1:
-         train_loader = torch.utils.data.DataLoader(
+
+    train_loader = torch.utils.data.DataLoader(
               train_dataset, batch_size=args.batch_size, sampler=train_sampler,
               pin_memory=pin_memory,drop_last=False)
-         valid_loader = torch.utils.data.DataLoader(
+    valid_loader = torch.utils.data.DataLoader(
         valid_dataset, batch_size=args.batch_size, sampler=valid_sampler,
         pin_memory=pin_memory,drop_last=False)
-    else:
-         train_loader = torch.utils.data.DataLoader(
-            train_dataset, batch_size=args.batch_size, sampler=train_sampler, num_workers = args.num_workers,
-            pin_memory=pin_memory,drop_last=False)
-         valid_loader = torch.utils.data.DataLoader(
-            valid_dataset, batch_size=args.batch_size, sampler=valid_sampler, num_workers = args.num_workers,
-            pin_memory=pin_memory,drop_last=False)
+
 
 
     return (train_loader, valid_loader)
@@ -138,15 +132,12 @@ def get_test_loader(args,
         download=True, transform=transform,
     )
     if args.centralized ==1:
-        data_loader = torch.utils.data.DataLoader(
-            dataset, batch_size=args.batch_size, shuffle=shuffle,
-            pin_memory=pin_memory,
-        )
+          data_loader = torch.utils.data.DataLoader(
+              dataset, batch_size=args.batch_size, shuffle=shuffle)
     else:
-        data_loader = torch.utils.data.DataLoader(
-            dataset, batch_size=args.batch_size, shuffle=shuffle,
-            num_workers=args.num_workers, pin_memory=pin_memory,
-        )
+            data_loader = torch.utils.data.DataLoader(
+              dataset, batch_size=args.batch_size, shuffle=shuffle
+         )
 
     return data_loader
 
@@ -195,16 +186,53 @@ def get_user_groups(args):
         user_groups = non_iid_unbalanced(args,server_id)
 
     if args.iid == 1 and args.balanced == 1:
-        user_groups,cls_count = iid_balanced(args,server_id, server_labels)
+        user_groups = iid_balanced(args,server_id, server_labels)
 
     if args.iid == 1 and args.balanced == 0:
-        user_groups,cls_count = iid_unbalanced(args, server_id, server_labels)
+        user_groups, nets_cls_counts = iid_unbalanced(args, server_id, server_labels)
 
-    return user_groups, cls_count
+    return user_groups
+
+def get_user_groups_alpha(args):
+    train_dataset,_ = get_dataset(args)
+    users = np.arange(0,args.num_users)
+    server_data, server_labels, server_id = get_server(train_dataset)
+    num_items_balanced = int(len(server_id)/args.num_users)
+    #print(server_labels)
+    min_size=0
+    while min_size < 10:
+         idx_batch = [[] for _ in range(args.num_users)]
+         for k in range(args.num_classes):
+            idx_k=[]
+            for i in range(len(server_labels)):
+                if server_labels[i]==k:
+                    idx_k.append(i)
+
+            #print("idx_k", idx_k)
+            np.random.shuffle(idx_k)
+            #print("idx_k_new", idx_k)
+            proportions=np.random.dirichlet(np.repeat(args.alpha, args.num_users))
+            #print("proportions1", proportions)
+            proportions = np.array([p*(len(idx_j)<len(server_labels)/(args.num_users*args.frac)) for p,idx_j in zip(proportions,idx_batch)])
+            #print("proportions2", proportions)
+            proportions=proportions/proportions.sum()
+            #print("proportions3", proportions)
+            proportions = (np.cumsum(proportions)*len(idx_k)).astype(int)[:-1]
+            #print("proportions4", proportions)
+            idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
+            min_size = min([len(idx_j) for idx_j in idx_batch])
+    dict_users={}
+    for j in range(args.num_users):
+        np.random.shuffle(idx_batch[j])
+        dict_users[j] = idx_batch[j]
+        #print(len(dict_users[j]), len(idx_batch[j]))
+
+    return dict_users
 '''
-train_dataset,_ = get_dataset(args)
-users = np.arange(0,100)
-server_data, server_labels, server_id =get_server(train_dataset)
-dict_users= iid_balanced(args,server_id, server_labels)
-print(dict_users)
+args=args_parser()
+train_dataset, _= get_dataset(args)
+server_data, server_labels, server_id= get_server(train_dataset)
+new_dict, nets_cls_counts= iid_unbalanced(args,server_id, server_labels)
+
+print(nets_cls_counts)
 '''
