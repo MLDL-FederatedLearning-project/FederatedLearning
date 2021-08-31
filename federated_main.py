@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 # Python version: 3.6
 
-
 import os
 import copy
 import time
@@ -23,8 +22,9 @@ from models_fedma import pdm_prepare_weights,pdm_prepare_freq,partition_data,com
 from models_fedma import pdm_multilayer_group_descent
 from itertools import product
 from dataset_split import get_train_valid_loader, get_test_loader
+from update import DatasetSplit
 
-from sampling import random_number_images, non_iid_unbalanced, iid_unbalanced, non_iid_balanced, iid_unbalanced
+from sampling import random_number_images, non_iid_unbalanced, iid_unbalanced, non_iid_balanced, iid_unbalanced,get_server,iid_balanced
 
 
 
@@ -50,8 +50,9 @@ if __name__ == '__main__':
 
     # load dataset and user groups
     train_dataset, test_dataset = get_dataset(args)
-    user_groups = get_user_groups(args)
+    user_groups,cls_count = get_user_groups(args)
     #user_groups=get_user_groups_alpha(args)
+    #print("user_groups",user_groups)
 
 
     # BUILD MODEL
@@ -85,26 +86,29 @@ if __name__ == '__main__':
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
         if args.comm_type == "fedavg":
+            global_weights = average_weights(local_weights)
             for idx in idxs_users:
                 print(idx)
                 local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                      idxs=user_groups[idx], logger=logger)
+                                  idxs=user_groups[idx], logger=logger)
 
                 w, loss = local_model.update_weights(model=copy.deepcopy(global_model), global_round=round)
 
                 local_weights.append(copy.deepcopy(w))
                 local_losses.append(copy.deepcopy(loss))
-            # update global weights
+        # update global weights
 
-            global_weights = average_weights(local_weights)
         elif args.comm_type == "fedma":
             batch_weights = pdm_prepare_weights(global_model)
-            print("batch_weights",batch_weights)
+            #print("batch_weights",batch_weights)
             n_classes = args.net_config
             #print("n classes",len(n_classes), type(n_classes))
             n_classes = n_classes[-1]
-            cls_freqs = partition_data(train_dataset, test_dataset, args.n_nets)
-            #cls_freqs = non_iid_unbalanced(args,server_id)
+            cls_freqs=cls_count
+            #cls_freqs = partition_data(train_dataset, test_dataset, args.n_nets)
+            #_,server_labels,server_id=get_server(train_dataset)
+            #cls_freqs = non_iid_unbalanced(server_id,args)
+            #cls_freqs=iid_balanced(args,server_id,server_labels)
             print("CLS freq",cls_freqs)
             batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
             #print("batch frequencies", batch_freqs)
@@ -122,37 +126,51 @@ if __name__ == '__main__':
                 with open("hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".txt", "w") as output:
                     output.write(str(hungarian_weights))
                 #train_dataset, test_dataset = get_dataset(args)
-                train_dataset, validloader = get_train_valid_loader(args,
-                                                                  valid_size=0.2,
-                                                                  shuffle=True,
-                                                                  pin_memory=False)
-                test_dataset = get_test_loader(args,
-                                             shuffle=True,
-                                             pin_memory=False)
-                train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes,cls_freqs)
-                res = {}
-                key = (sigma0, sigma, gamma)
-                res[key] = {}
-                """for k in key:
-                we should discuss about it later on
-                """
-                res[key]['shapes'] = list(map(lambda x: x.shape, hungarian_weights))
-                res[key]['train_accuracy'] = train_acc
-                res[key]['test_accuracy'] = test_acc
 
-                print('Sigma0: %s. Sigma: %s. Shapes: %s, Accuracy: %f' % (
-                    str(sigma0), str(sigma), str(res[key]['shapes']), test_acc))
-                best_test_acc, best_train_acc, best_weights, best_sigma, best_gamma, best_sigma0 = -1, -1, None, -1, -1, -1
-                if train_acc > best_train_acc:
-                    best_test_acc = test_acc
-                    best_train_acc = train_acc
-                    best_weights = hungarian_weights
-                    best_sigma = sigma
-                    best_gamma = gamma
-                    best_sigma0 = sigma0
+                for idx in idxs_users:
+                    idxs = list(user_groups[idx])
+                    idxs_train = list(idxs[:int(0.8 * len(idxs))])
+                    idxs_test = list(idxs[int(0.8 * len(idxs)):])
 
-                print('Best sigma0: %f, Best sigma: %f, Best Gamma: %f, Best accuracy (Test): %f. Training acc: %f' % (
-                    best_sigma0, best_sigma, best_gamma, best_test_acc, best_train_acc))
+                    tr_dataset, _ = get_dataset(args)
+
+                    train_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_train),
+                                             batch_size=args.local_batch_size, shuffle=True, drop_last=False)
+                    # maybe add num_workers
+                    test_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_test),
+                                            batch_size=args.local_batch_size, shuffle=False)
+                    '''
+                    train_dataset, validloader = get_train_valid_loader(args,
+                                                                      valid_size=0.2,
+                                                                      shuffle=True,
+                                                                      pin_memory=False)
+                    test_dataset = get_test_loader(args,
+                                                 shuffle=True,
+                                                 pin_memory=False)'''
+                    train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes,cls_freqs)
+                    res = {}
+                    key = (sigma0, sigma, gamma)
+                    res[key] = {}
+                    """for k in key:
+                    we should discuss about it later on
+                    """
+                    res[key]['shapes'] = list(map(lambda x: x.shape, hungarian_weights))
+                    res[key]['train_accuracy'] = train_acc
+                    res[key]['test_accuracy'] = test_acc
+
+                    print('Sigma0: %s. Sigma: %s. Shapes: %s, Accuracy: %f' % (
+                        str(sigma0), str(sigma), str(res[key]['shapes']), test_acc))
+                    best_test_acc, best_train_acc, best_weights, best_sigma, best_gamma, best_sigma0 = -1, -1, None, -1, -1, -1
+                    if train_acc > best_train_acc:
+                        best_test_acc = test_acc
+                        best_train_acc = train_acc
+                        best_weights = hungarian_weights
+                        best_sigma = sigma
+                        best_gamma = gamma
+                        best_sigma0 = sigma0
+
+                    print('Best sigma0: %f, Best sigma: %f, Best Gamma: %f, Best accuracy (Test): %f. Training acc: %f' % (
+                        best_sigma0, best_sigma, best_gamma, best_test_acc, best_train_acc))
         else:
             print("you did not choose a correct communication type")
         # update global weights

@@ -77,7 +77,7 @@ def get_train_valid_loader(args,
     split = int(np.floor(valid_size * num_train))
 
     if shuffle:
-        np.random.seed(args.random_seed)
+        np.random.seed(args.seed)
         np.random.shuffle(indices)
 
     train_idx, valid_idx = indices[split:], indices[:split]
@@ -195,12 +195,12 @@ def get_user_groups(args):
         user_groups = non_iid_unbalanced(args,server_id)
 
     if args.iid == 1 and args.balanced == 1:
-        user_groups = iid_balanced(args,server_id, server_labels)
+        user_groups,cls_count = iid_balanced(args,server_id, server_labels)
 
     if args.iid == 1 and args.balanced == 0:
-        user_groups = iid_unbalanced(args, server_id, server_labels)
+        user_groups,cls_count = iid_unbalanced(args, server_id, server_labels)
 
-    return user_groups
+    return user_groups, cls_count
 '''
 train_dataset,_ = get_dataset(args)
 users = np.arange(0,100)

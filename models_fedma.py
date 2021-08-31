@@ -1,11 +1,12 @@
 import numpy as np
 import torchvision.transforms as transforms
 from options import args_parser
-from dataset_split import get_dataset
-from models import CNNContainer, FcNet
+from dataset_split import get_dataset,get_user_groups
+from models import CNNContainer
 import torch
 from sklearn.metrics import confusion_matrix
 import torch.nn.functional as F
+
 
 
 def pdm_prepare_weights(net):
@@ -275,6 +276,17 @@ def pdm_multilayer_group_descent(batch_weights, batch_frequencies, sigma_layers,
     map_out = [g_w / g_s for g_w, g_s in zip(global_weights_out, global_inv_sigmas_out)]
 
     return map_out, assignment_all
+'''
+def record_net_data_stats(y_train, net_dataidx_map):
+    net_cls_counts = {}
+    for net_i, dataidx in net_dataidx_map.items():
+        unq, unq_cnt = np.unique(y_train, return_counts=True)
+        print("uniq",unq,"uniq_cnt", unq_cnt)
+        tmp = {unq[i]: unq_cnt[i] for i in range(len(unq))}
+        net_cls_counts[net_i] = tmp
+
+    return net_cls_counts
+'''
 
 def record_net_data_stats(y_train, net_dataidx_map):
     net_cls_counts = {}
@@ -292,7 +304,6 @@ def record_net_data_stats(y_train, net_dataidx_map):
         net_cls_counts[net_i] = sortedDict
 
     return net_cls_counts
-
 
 def load_cifar10_data(datadir):
 
@@ -312,10 +323,9 @@ def partition_data(train, test, n_nets, alpha=0.5):
     batch_idxs = np.array_split(idxs, n_nets)
     #print("batch index",batch_idxs)
     net_dataidx_map = {i: batch_idxs[i] for i in range(n_nets)}
-    #print("net data index", net_dataidx_map)
-
+    print("net data index", net_dataidx_map)
     traindata_cls_counts = record_net_data_stats(y_train, net_dataidx_map)
-    print("train data cls count",traindata_cls_counts)
+    #print("train data cls count",traindata_cls_counts)
     return traindata_cls_counts
 
 
@@ -346,8 +356,9 @@ def prepare_sanity_weights(n_classes, net_cnt):
 
 
 def normalize_weights(weights):
+    print("weights come to normalization",weights)
     Z = np.array([])
-    eps = 1e-6
+    eps = 1e-3
     weights_norm = {}
 
     for _, weight in weights.items():
@@ -355,12 +366,10 @@ def normalize_weights(weights):
             Z = weight.data.numpy()
         else:
             Z = Z + weight.data.numpy()
-
+    print("z in normalize",Z)
     for mi, weight in weights.items():
         weights_norm[mi] = weight / torch.from_numpy(Z + eps)
-
     print("weights normalized",weights_norm)
-    input()
     return weights_norm
 
 """ToDo :  Check the prediction which is 0 but it added to correct predictions"""
@@ -368,14 +377,27 @@ def get_weighted_average_pred(models: list, weights: dict, images,labels,optimiz
     out_weighted = None
     criterion = torch.nn.NLLLoss()
     # Compute the predictions
-    #print("models",models)
-    count=0
     for model_i, model in enumerate(models):
-        #print("model i",model_i)
-        #print("weights model i",weights[model_i])
-        count+=1
-        #print("count",count)
-        out = F.log_softmax(model(images), dim=-1)  # (N, C)
+        #print("model_i",model_i,"model",model)
+        #print("x value",x)
+        #print("x shape",x.shape)
+        #print("x",x)
+        #x = np.expand_dims(x, 1)  # if numpy array
+        #x = torch.unsqueeze(x,0)# if torch tensor
+        #images = images.expand([64, 3, 32, 32])
+        #optimizer.zero_grad()
+        #print("x",x)
+        #print("x shape",x.shape)
+        #print(model(images))
+        out = F.log_softmax(model(images), dim=1)  # (N, C)
+        #print("out",out.shape)
+        #out = model(images)
+        #loss = criterion(out, labels)
+        #loss.backward()
+        #optimizer.step()
+        #out = model(x)  # (N, C)
+        #print("out", out.shape)
+        #print("output ", out)
         if out_weighted is None:
             out_weighted = (out * weights[model_i])
         else:
@@ -383,9 +405,10 @@ def get_weighted_average_pred(models: list, weights: dict, images,labels,optimiz
 
     return out_weighted
 
-
+#add dict_user instead of dataloader
 def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_counts=None, uniform_weights=False, sanity_weights=False, args = args_parser()):
 
+    dict_user= get_user_groups(args)
     correct, total = 0, 0
     true_labels_list, pred_labels_list = np.array([]), np.array([])
 
@@ -406,12 +429,13 @@ def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_cou
     weights_norm = normalize_weights(weights_list)
 
     with torch.no_grad():
+        #print("data loader",dataloader)
+        #NEED TO CHANGE BATCH_IDX in USERS
+        #dict_user: (user_id,images) need to add labels
+        #for user_id, (images, target) in dict_user:
         for batch_idx, (images, target) in enumerate(dataloader):
+            #print("images", images)
             target = target.long()
-            #print("batch index",batch_idx)
-            #("images",images)
-            #print("target",target)
-
             #print("models",models)
             #print("weights norm",weights_norm)
             out = get_weighted_average_pred(models, weights_norm, images, target, optimizer)
@@ -424,7 +448,7 @@ def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_cou
             pred_labels_list = np.append(pred_labels_list, pred_label.numpy())
             true_labels_list = np.append(true_labels_list, target.data.numpy())
             print("correct", correct, "total", total, "batch index", batch_idx)
-            print("pred label list",pred_labels_list)
+            #print("pred label",pred_labels_list)
             #print("true label list", true_labels_list)
 
 
@@ -462,7 +486,6 @@ def compute_pdm_net_accuracy(weights, train_dl, test_dl, n_classes,cls_freqs):
     statedict = pdm_net.state_dict()
     # print(pdm_net)
 
-
     i = 0
     layer_i = 0
     while i < len(weights):
@@ -478,12 +501,8 @@ def compute_pdm_net_accuracy(weights, train_dl, test_dl, n_classes,cls_freqs):
         layer_i += 1
     #print("Statedict",statedict)
     pdm_net.load_state_dict(statedict)
-    args = args_parser()
-    models=[]
-    for i in range(args.n_nets):
-        models.append(pdm_net)
-    train_acc, conf_matrix_train = compute_ensemble_accuracy(models, train_dl, n_classes,train_cls_counts=cls_freqs ,uniform_weights=False,sanity_weights=False)
-    test_acc, conf_matrix_test = compute_ensemble_accuracy(models, test_dl, n_classes,train_cls_counts=cls_freqs, uniform_weights=False,sanity_weights=False)
+
+    train_acc, conf_matrix_train = compute_ensemble_accuracy([pdm_net], train_dl, n_classes,train_cls_counts=cls_freqs ,uniform_weights=False,sanity_weights=False)
+    test_acc, conf_matrix_test = compute_ensemble_accuracy([pdm_net], test_dl, n_classes,train_cls_counts=cls_freqs, uniform_weights=False,sanity_weights=False)
 
     return train_acc, test_acc, conf_matrix_train, conf_matrix_test
-

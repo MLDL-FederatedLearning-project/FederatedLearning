@@ -40,7 +40,7 @@ def get_dict_labels (args,server_id,server_labels):
 
 # This function defines for n clients ( for us n=args.num_users ) how many images to take
 
-def random_number_images(n, args,server_id):
+def random_number_images(n, args,server_id): #how do we choose n?
     SEED = args.seed
     random.seed(SEED)
     np.random.seed(SEED)
@@ -61,10 +61,10 @@ def random_number_images(n, args,server_id):
     return np.array(items)
 
 
-def non_iid_unbalanced(args,server_id):
-    num_users = args.num_users
-    users = np.arange(0, num_users)
-    num_items_unbalanced = random_number_images(num_users+1, server_id)  # it respresents the number of imagis each user has for the unbalanced split of the dataset
+def non_iid_unbalanced(server_id,args):
+    #num_users = args.num_users
+    users = np.arange(0, args.num_users)
+    num_items_unbalanced = random_number_images(args.num_users+1, server_id)  # it respresents the number of imagis each user has for the unbalanced split of the dataset
     dict_users = {}
     all_idxs = [i for i in range(len(server_id))]
     for user in users:
@@ -85,24 +85,28 @@ def non_iid_balanced(args,server_id):
 
     return dict_users
 
-
-
-def iid_balanced(args,server_id,server_labels):
+def iid_balanced(args, server_id, server_labels):
     num_users = args.num_users
     users = np.arange(0, num_users)
     num_items_balanced = int(len(server_id) / num_users)
     dict_users = collections.defaultdict(dict)
     labels = np.arange(0, args.num_classes)
     dict_labels = get_dict_labels(args, server_id, server_labels)
-    all_idxs =  [i for i in range(len(server_id))]
-    new_dict={}
+    all_idxs = [i for i in range(len(server_id))]
+    new_dict = {}
+    nets_cls_counts = collections.defaultdict(dict)
     for user in users:
         for label in labels:
-          dict_users[user][label] = set(np.random.choice(dict_labels[label], int(num_items_balanced/args.num_classes), replace=False))
-          all_idxs = list(set(all_idxs) - dict_users[user][label])
-        new_dict[user]=set().union(dict_users[user][0], dict_users[user][1], dict_users[user][2], dict_users[user][3], dict_users[user][4],dict_users[user][5],dict_users[user][6],dict_users[user][7],dict_users[user][8],dict_users[user][9])
+            dict_users[user][label] = set(
+                np.random.choice(dict_labels[label], int(num_items_balanced / args.num_classes), replace=False))
+            all_idxs = list(set(all_idxs) - dict_users[user][label])
+            nets_cls_counts[user][label] = len(list(dict_users[user][label]))
+        new_dict[user] = set().union(dict_users[user][0], dict_users[user][1], dict_users[user][2],
+                                     dict_users[user][3], dict_users[user][4], dict_users[user][5],
+                                     dict_users[user][6], dict_users[user][7], dict_users[user][8],
+                                     dict_users[user][9])
 
-    return new_dict
+    return new_dict, nets_cls_counts
 
 
 
