@@ -9,6 +9,16 @@ from collections import defaultdict
 import argparse
 #from options_FedMA import add_fit_args
 
+def record_net_data_stats(y_train, net_dataidx_map):
+
+    net_cls_counts = {}
+
+    for net_i, dataidx in net_dataidx_map.items():
+        unq, unq_cnt = np.unique(y_train[dataidx], return_counts=True)
+        tmp = {unq[i]: unq_cnt[i] for i in range(len(unq))}
+        net_cls_counts[net_i] = tmp
+    #logging.debug('Data statistics: %s' % str(net_cls_counts))
+    return net_cls_counts
 
 
 def get_server(train_dataset):
@@ -61,36 +71,31 @@ def random_number_images(n, args,server_id):
     return np.array(items)
 
 
-def non_iid_unbalanced(args,server_id):
+def non_iid_unbalanced(args,server_id, server_labels):
     num_users = args.num_users
     users = np.arange(0, num_users)
-    num_items_unbalanced = random_number_images(num_users+1, server_id)  # it respresents the number of imagis each user has for the unbalanced split of the dataset
+    num_items_unbalanced = random_number_images(num_users+1, args, server_id)  # it respresents the number of imagis each user has for the unbalanced split of the dataset
     dict_users = {}
     all_idxs = [i for i in range(len(server_id))]
     for user in users:
-      dict_users[user] = set(np.random.choice(all_idxs, num_items_unbalanced[user], replace=False))
-      all_idxs = list(set(all_idxs) - dict_users[user])
+      dict_users[user] = np.array(np.random.choice(all_idxs, num_items_unbalanced[user], replace=False))
+      all_idxs = list(set(all_idxs) - set(dict_users[user]))
+    traindata_cls_counts = record_net_data_stats(np.array(server_labels), dict_users)
+    return server_labels, dict_users, traindata_cls_counts
 
-    return dict_users
-
-def non_iid_balanced(args,server_id, server_labels):
+def non_iid_balanced(args, server_id, server_labels):
     num_users = args.num_users
     users = np.arange(0, num_users)
-    num_items_balanced = int(len(server_id)/num_users) # it respresents the number of images each user has for the balanced split of the dataset; each user has the same number of images
+    num_items_balanced = int(len(server_id)/num_users)
     dict_users = {}
-    labels = np.arange(0, args.num_classes)
-    nets_cls_counts = collections.defaultdict(dict)
     all_idxs = [i for i in range(len(server_id))]
-    list_labels=[]
     for user in users:
-        for label in labels:
-           dict_users[user] = set(np.random.choice(all_idxs, num_items_balanced, replace=False))
-           for i in dict_users[user]:
-               list_labels.append(server_labels[i])
-           all_idxs = list(set(all_idxs) - dict_users[user])
-           nets_cls_counts[user][label]= list(list_labels).count(label)
+        dict_users[user] = np.array(np.random.choice(all_idxs, num_items_balanced, replace=False))
+        all_idxs = list(set(all_idxs) - set(dict_users[user]))
 
-    return dict_users, nets_cls_counts
+    traindata_cls_counts = record_net_data_stats(np.array(server_labels), dict_users)
+    #print(net_dataidx_map)
+    return server_labels, dict_users, traindata_cls_counts
 
 
 
@@ -106,12 +111,12 @@ def iid_balanced(args,server_id,server_labels):
     nets_cls_counts = collections.defaultdict(dict)
     for user in users:
         for label in labels:
-          dict_users[user][label] = set(np.random.choice(dict_labels[label], int(num_items_balanced/args.num_classes), replace=False))
-          all_idxs = list(set(all_idxs) - dict_users[user][label])
+          dict_users[user][label] = np.array(np.random.choice(dict_labels[label], int(num_items_balanced/args.num_classes), replace=False))
+          all_idxs = list(set(all_idxs) - set(dict_users[user][label]))
           nets_cls_counts[user][label] = len(list(dict_users[user][label]))
-        new_dict[user]=set().union(dict_users[user][0], dict_users[user][1], dict_users[user][2], dict_users[user][3], dict_users[user][4],dict_users[user][5],dict_users[user][6],dict_users[user][7],dict_users[user][8],dict_users[user][9])
-
-    return new_dict, nets_cls_counts
+        new_dict[user]=np.array(set().union(dict_users[user][0], dict_users[user][1], dict_users[user][2], dict_users[user][3], dict_users[user][4],dict_users[user][5],dict_users[user][6],dict_users[user][7],dict_users[user][8],dict_users[user][9]))
+    traindata_cls_counts = record_net_data_stats(np.array(server_labels), new_dict)
+    return server_labels, new_dict, traindata_cls_counts
 
 
 
@@ -154,4 +159,3 @@ if __name__ == '__main__':
             download=True, transform=train_transform,
         )
 '''
-
