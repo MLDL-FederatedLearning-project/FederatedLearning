@@ -1,15 +1,17 @@
 import torch
-import numpy as np
-
-
-from torchvision import datasets
-from torchvision import transforms
+import torchvision
+from torchvision import datasets, transforms
 from torch.utils.data.sampler import SubsetRandomSampler
-from sampling import get_server,get_dict_labels,random_number_images, non_iid_unbalanced, iid_unbalanced, non_iid_balanced, iid_balanced
+import numpy as np
+import pandas as pd
 import random
+import collections
+from collections import defaultdict
+from sampling import get_server,get_dict_labels,random_number_images, non_iid_unbalanced, iid_unbalanced, non_iid_balanced, iid_balanced
+import argparse
 from options import args_parser
 
-
+#from options_FedMA import add_fit_args
 
 args = args_parser()
 def get_train_valid_loader(args,
@@ -180,18 +182,18 @@ def get_user_groups(args):
     server_data, server_labels, server_id = get_server(train_dataset)
 
     if args.iid == 0 and args.balanced == 1:
-        user_groups = non_iid_balanced(args, server_id)
+        server_labels, dict_users, traindata_cls_counts = non_iid_balanced(args, server_id, server_labels)
 
     if args.iid == 0 and args.balanced == 0:
-        user_groups = non_iid_unbalanced(args,server_id)
+        server_labels, dict_users, traindata_cls_counts= non_iid_unbalanced(args,server_id, server_labels)
 
     if args.iid == 1 and args.balanced == 1:
-        user_groups = iid_balanced(args,server_id, server_labels)
+        server_labels, new_dict, traindata_cls_counts = iid_balanced(args,server_id, server_labels)
 
     if args.iid == 1 and args.balanced == 0:
-        user_groups, nets_cls_counts = iid_unbalanced(args, server_id, server_labels)
+        user_groups = iid_unbalanced(args, server_id, server_labels)
 
-    return user_groups
+    return server_labels, dict_users, traindata_cls_counts
 
 def get_user_groups_alpha(args):
     train_dataset,_ = get_dataset(args)
