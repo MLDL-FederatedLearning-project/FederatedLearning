@@ -1,7 +1,7 @@
 import copy
 import torch
 from torchvision import datasets, transforms
-from sampling import random_number_images, non_iid_unbalanced, iid_unbalanced, non_iid_balanced, iid_unbalanced
+#from sampling import random_number_images, non_iid_unbalanced, iid_unbalanced, non_iid_balanced, iid_unbalanced
 
 
 
@@ -23,7 +23,7 @@ def exp_details(args):
     print(f'    Model     : {args.model}')
     print(f'    Optimizer : {args.optimizer}')
     print(f'    Learning  : {args.lr}')
-    print(f'    Global Rounds   : {args.epochs}\n')
+    print(f'    Global Rounds   : {args.communication_rounds}\n')
 
     print('    Federated parameters:')
     if args.iid == 0 and args.balanced == 0:

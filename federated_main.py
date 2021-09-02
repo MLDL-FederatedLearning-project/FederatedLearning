@@ -21,7 +21,7 @@ from dataset_split import get_dataset, get_user_groups
 from models_fedma import pdm_prepare_weights,pdm_prepare_freq,partition_data,compute_pdm_net_accuracy
 from models_fedma import pdm_multilayer_group_descent
 from itertools import product
-from dataset_split import get_train_valid_loader, get_test_loader
+from dataset_split import get_train_valid_loader, get_test_loader,get_user_groups_alpha
 from update import DatasetSplit
 
 from sampling import random_number_images, non_iid_unbalanced, iid_unbalanced, non_iid_balanced, iid_unbalanced,get_server,iid_balanced
@@ -50,7 +50,7 @@ if __name__ == '__main__':
 
     # load dataset and user groups
     train_dataset, test_dataset = get_dataset(args)
-    user_groups,cls_count = get_user_groups(args)
+    _,user_groups,cls_count = get_user_groups(args)
     #user_groups=get_user_groups_alpha(args)
     #print("user_groups",user_groups)
 
@@ -86,7 +86,7 @@ if __name__ == '__main__':
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
         if args.comm_type == "fedavg":
-            global_weights = average_weights(local_weights)
+
             for idx in idxs_users:
                 print(idx)
                 local_model = LocalUpdate(args=args, dataset=train_dataset,
@@ -96,10 +96,29 @@ if __name__ == '__main__':
 
                 local_weights.append(copy.deepcopy(w))
                 local_losses.append(copy.deepcopy(loss))
-        # update global weights
+            global_weights = average_weights(local_weights)
+            # update global weights
+            global_model.load_state_dict(global_weights)
+
+            loss_avg = sum(local_losses) / len(local_losses)
+            train_loss.append(loss_avg)
+
+            # Calculate avg training accuracy over all users at every round
+            list_acc, list_loss = [], []
+            global_model.eval()
+            for c in range(args.num_users):
+                local_model = LocalUpdate(args=args, dataset=train_dataset,
+                                          idxs=user_groups[c], logger=logger)
+                acc, loss = local_model.inference(model=global_model)
+                # print("Acc:", acc)
+                list_acc.append(acc)
+                list_loss.append(loss)
+
+            train_accuracy.append(sum(list_acc) / len(list_acc))
 
         elif args.comm_type == "fedma":
             batch_weights = pdm_prepare_weights(global_model)
+            n_nets=args.n_nets
             #print("batch_weights",batch_weights)
             n_classes = args.net_config
             #print("n classes",len(n_classes), type(n_classes))
@@ -109,13 +128,13 @@ if __name__ == '__main__':
             #_,server_labels,server_id=get_server(train_dataset)
             #cls_freqs = non_iid_unbalanced(server_id,args)
             #cls_freqs=iid_balanced(args,server_id,server_labels)
-            print("CLS freq",cls_freqs)
+            #print("CLS freq",cls_freqs)
             batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
             #print("batch frequencies", batch_freqs)
             gammas = [1.0, 1e-3, 50.0]
             sigmas = [1.0, 0.1, 0.5]
             sigma0s = [1.0, 10.0]
-
+            best_test_acc, best_train_acc, best_weights, best_sigma, best_gamma, best_sigma0 = -1, -1, None, -1, -1, -1
             for gamma, sigma, sigma0 in product(gammas, sigmas, sigma0s):
                 print("Gamma: ", gamma, "Sigma: ", sigma, "Sigma0: ", sigma0)
                 hungarian_weights , _ = pdm_multilayer_group_descent(
@@ -147,7 +166,7 @@ if __name__ == '__main__':
                     test_dataset = get_test_loader(args,
                                                  shuffle=True,
                                                  pin_memory=False)'''
-                    train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes,cls_freqs)
+                    train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes,cls_freqs,n_nets,args=args_parser())
                     res = {}
                     key = (sigma0, sigma, gamma)
                     res[key] = {}
@@ -158,9 +177,9 @@ if __name__ == '__main__':
                     res[key]['train_accuracy'] = train_acc
                     res[key]['test_accuracy'] = test_acc
 
-                    print('Sigma0: %s. Sigma: %s. Shapes: %s, Accuracy: %f' % (
-                        str(sigma0), str(sigma), str(res[key]['shapes']), test_acc))
-                    best_test_acc, best_train_acc, best_weights, best_sigma, best_gamma, best_sigma0 = -1, -1, None, -1, -1, -1
+                    #print('Sigma0: %s. Sigma: %s. Shapes: %s, Accuracy: %f' %(
+                        #str(sigma0), str(sigma), str(res[key]['shapes']), test_acc))
+
                     if train_acc > best_train_acc:
                         best_test_acc = test_acc
                         best_train_acc = train_acc
@@ -171,9 +190,17 @@ if __name__ == '__main__':
 
                     print('Best sigma0: %f, Best sigma: %f, Best Gamma: %f, Best accuracy (Test): %f. Training acc: %f' % (
                         best_sigma0, best_sigma, best_gamma, best_test_acc, best_train_acc))
+
+
+
+
+
         else:
             print("you did not choose a correct communication type")
-        # update global weights
+
+
+
+        '''# update global weights
         global_model.load_state_dict(global_weights)
 
         loss_avg = sum(local_losses) / len(local_losses)
@@ -190,7 +217,7 @@ if __name__ == '__main__':
             list_acc.append(acc)
             list_loss.append(loss)
 
-        train_accuracy.append(sum(list_acc)/len(list_acc))
+        train_accuracy.append(sum(list_acc)/len(list_acc))'''
 
 
         # print global training loss after every 'i' rounds
@@ -202,7 +229,7 @@ if __name__ == '__main__':
     # Test inference after completion of training
     test_acc, test_loss = test_inference(args, global_model, test_dataset)
 
-    print(f' \n Results after {args.epochs} global rounds of training:')
+    print(f' \n Results after {args.communication_rounds} global rounds of training:')
     print("|---- Avg Train Accuracy: {:.2f}%".format(train_accuracy[-1]))
     print("|---- Test Accuracy: {:.2f}%".format(test_acc))
 
@@ -230,7 +257,7 @@ if __name__ == '__main__':
     plt.ylabel('Training loss')
     plt.xlabel('Communication Rounds')
     plt.savefig(dir_path+'/loss_federated.png'.
-                format(args.dataset, args.model, args.epochs, args.frac,
+                format(args.dataset, args.model, args.communication_rounds, args.frac,
                         args.iid, args.local_ep, args.local_batch_size))
     #plt.show()
 
@@ -241,6 +268,6 @@ if __name__ == '__main__':
     plt.ylabel('Average Accuracy')
     plt.xlabel('Communication Rounds')
     plt.savefig(dir_path+'/accuracy_federated.png'.
-                format(args.dataset, args.model, args.epochs, args.frac,
+                format(args.dataset, args.model, args.communication_rounds, args.frac,
                        args.iid, args.local_ep, args.local_batch_size))
     #plt.show()

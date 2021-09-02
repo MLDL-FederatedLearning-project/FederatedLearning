@@ -50,7 +50,7 @@ def compute_pdm_matching_multilayer(models, train_dl, test_dl, cls_freqs, n_clas
             batch_weights, sigma0_layers=sigma0, sigma_layers=sigma, batch_frequencies=batch_freqs, it=it, gamma_layers=gamma
         )
 
-        train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dl, test_dl, n_classes,cls_freqs)
+        train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dl, test_dl, n_classes,cls_freqs,n_nets,args=args_parser)
 
         key = (sigma0, sigma, gamma)
         res[key] = {}
@@ -204,7 +204,7 @@ def pdm_multilayer_group_descent(batch_weights, batch_frequencies, sigma_layers,
             #print("f constant",f)
             result = np.divide(f, total_freq, where=total_freq != 0)
             last_layer_const.append(result)
-        print("last layer",last_layer_const)
+        #print("last layer",last_layer_const)
 
     sigma_bias_layers = sigma_layers
     sigma0_bias_layers = sigma0_layers
@@ -356,7 +356,7 @@ def prepare_sanity_weights(n_classes, net_cnt):
 
 
 def normalize_weights(weights):
-    print("weights come to normalization",weights)
+    #print("weights come to normalization",weights)
     Z = np.array([])
     eps = 1e-3
     weights_norm = {}
@@ -369,7 +369,7 @@ def normalize_weights(weights):
     print("z in normalize",Z)
     for mi, weight in weights.items():
         weights_norm[mi] = weight / torch.from_numpy(Z + eps)
-    print("weights normalized",weights_norm)
+    #print("weights normalized",weights_norm)
     return weights_norm
 
 """ToDo :  Check the prediction which is 0 but it added to correct predictions"""
@@ -378,7 +378,7 @@ def get_weighted_average_pred(models: list, weights: dict, images,labels,optimiz
     criterion = torch.nn.NLLLoss()
     # Compute the predictions
     for model_i, model in enumerate(models):
-        #print("model_i",model_i,"model",model)
+        print("model_i",model_i,"model",model)
         #print("x value",x)
         #print("x shape",x.shape)
         #print("x",x)
@@ -398,10 +398,11 @@ def get_weighted_average_pred(models: list, weights: dict, images,labels,optimiz
         #out = model(x)  # (N, C)
         #print("out", out.shape)
         #print("output ", out)
+
         if out_weighted is None:
             out_weighted = (out * weights[model_i])
         else:
-            out_weighted += (out * weights[model_i])
+            out_weighted += (out * weights[model_ii])
 
     return out_weighted
 
@@ -425,8 +426,9 @@ def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_cou
         weights_list = prepare_sanity_weights(n_classes, len(models))
     else:
         weights_list = prepare_weight_matrix(n_classes, train_cls_counts)
-    print("weights list",weights_list)
+    #print("weights list",weights_list)
     weights_norm = normalize_weights(weights_list)
+    #print("weights norm", weights_norm)
 
     with torch.no_grad():
         #print("data loader",dataloader)
@@ -439,7 +441,7 @@ def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_cou
             #print("models",models)
             #print("weights norm",weights_norm)
             out = get_weighted_average_pred(models, weights_norm, images, target, optimizer)
-            #print("out",out)
+            print("out",out)
             _, pred_label = torch.max(out, 1)
             pred_label = pred_label.view(-1)
             print("pred label",pred_label)
@@ -447,12 +449,12 @@ def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_cou
             correct += (pred_label == target.data).sum().item()
             pred_labels_list = np.append(pred_labels_list, pred_label.numpy())
             true_labels_list = np.append(true_labels_list, target.data.numpy())
-            print("correct", correct, "total", total, "batch index", batch_idx)
+            #print("correct", correct, "total", total, "batch index", batch_idx)
             #print("pred label",pred_labels_list)
             #print("true label list", true_labels_list)
 
 
-    print(correct, total)
+    #print(correct, total)
 
     conf_matrix = confusion_matrix(true_labels_list, pred_labels_list)
 
@@ -462,8 +464,49 @@ def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_cou
 
     return correct / float(total), conf_matrix
 
+def init_nets(input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim, n_nets,args=args_parser()):
 
-def compute_pdm_net_accuracy(weights, train_dl, test_dl, n_classes,cls_freqs):
+	input_size = args.net_config[0]
+	output_size = args.net_config[-1]
+	hidden_sizes = args.net_config[1:-1]
+
+	nets = {net_i: None for net_i in range(n_nets)}
+
+	for net_i in range(n_nets):
+		net = CNNContainer(input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim)
+
+
+		nets[net_i] = net
+
+	return nets
+
+def load_new_state(nets, new_weights):
+
+	for netid, net in nets.items():
+
+		statedict = net.state_dict()
+		weights = new_weights[netid]
+
+		# Load weight into the network
+		i = 0
+		layer_i = 0
+
+		while i < len(weights):
+			weight = weights[i]
+			i += 1
+			bias = weights[i]
+			i += 1
+
+			statedict['layers.%d.weight' % layer_i] = torch.from_numpy(weight.T)
+			statedict['layers.%d.bias' % layer_i] = torch.from_numpy(bias)
+			layer_i += 1
+
+		net.load_state_dict(statedict)
+
+	return nets
+
+
+def compute_pdm_net_accuracy(weights, train_dl, test_dl, n_classes,cls_freqs,n_nets,args=args_parser()):
 
     dims = []
     x = np.array(weights[0])
@@ -480,9 +523,12 @@ def compute_pdm_net_accuracy(weights, train_dl, test_dl, n_classes,cls_freqs):
     #num_filters = [weights[0].shape[0], weights[2].shape[0]]
     #print("num filter",num_filters)
     kernel_size = 5
-    pdm_net = CNNContainer(input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim)
+    n_nets=args.n_nets
 
+    pdm_net=CNNContainer(input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim)
+    #pdm_net = init_nets(input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim,n_nets,args=args_parser())
     #pdm_net = FcNet(input_dim, hidden_dims, output_dim)
+
     statedict = pdm_net.state_dict()
     # print(pdm_net)
 

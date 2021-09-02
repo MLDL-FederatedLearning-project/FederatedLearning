@@ -115,8 +115,8 @@ def iid_balanced(args,server_id,server_labels):
           all_idxs = list(set(all_idxs) - set(dict_users[user][label]))
           nets_cls_counts[user][label] = len(list(dict_users[user][label]))
         new_dict[user]=np.array(set().union(dict_users[user][0], dict_users[user][1], dict_users[user][2], dict_users[user][3], dict_users[user][4],dict_users[user][5],dict_users[user][6],dict_users[user][7],dict_users[user][8],dict_users[user][9]))
-    traindata_cls_counts = record_net_data_stats(np.array(server_labels), new_dict)
-    return server_labels, new_dict, traindata_cls_counts
+    #traindata_cls_counts = record_net_data_stats(np.array(server_labels), new_dict)
+    return server_labels, new_dict, nets_cls_counts
 
 
 
