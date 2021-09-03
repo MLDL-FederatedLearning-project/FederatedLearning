@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # Python version: 3.6
-
+import logging
 import os
 import copy
 import time
@@ -19,7 +19,7 @@ from models import CNN
 from utils import  average_weights, exp_details
 from dataset_split import get_dataset, get_user_groups
 from models_fedma import pdm_prepare_weights,pdm_prepare_freq,partition_data,compute_pdm_net_accuracy
-from models_fedma import pdm_multilayer_group_descent
+from models_fedma import pdm_multilayer_group_descent,compute_iterative_pdm_matching,load_new_state,train_net
 from itertools import product
 from dataset_split import get_train_valid_loader, get_test_loader,get_user_groups_alpha
 from update import DatasetSplit
@@ -77,18 +77,17 @@ if __name__ == '__main__':
     print_every = 1
     val_loss_pre, counter = 0, 0
 
-    for round in range(args.communication_rounds):
-        local_weights, local_losses = [], []
-        print(f'\n | Global Training Round : {round + 1} |\n')
 
-        global_model.train()
-        m = max(int(args.frac * args.num_users), 1)
-        idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
-        if args.comm_type == "fedavg":
+    if args.comm_type == "fedavg":
+        for round in range(args.communication_rounds):
+            local_weights, local_losses = [], []
+            print(f'\n | Global Training Round : {round + 1} |\n')
 
+            global_model.train()
+            m = max(int(args.frac * args.num_users), 1)
+            idxs_users = np.random.choice(range(args.num_users), m, replace=False)
             for idx in idxs_users:
-                print(idx)
                 local_model = LocalUpdate(args=args, dataset=train_dataset,
                                   idxs=user_groups[idx], logger=logger)
 
@@ -116,158 +115,208 @@ if __name__ == '__main__':
 
             train_accuracy.append(sum(list_acc) / len(list_acc))
 
-        elif args.comm_type == "fedma":
-            batch_weights = pdm_prepare_weights(global_model)
-            n_nets=args.n_nets
-            #print("batch_weights",batch_weights)
-            n_classes = args.net_config
-            #print("n classes",len(n_classes), type(n_classes))
-            n_classes = n_classes[-1]
-            cls_freqs=cls_count
-            #cls_freqs = partition_data(train_dataset, test_dataset, args.n_nets)
-            #_,server_labels,server_id=get_server(train_dataset)
-            #cls_freqs = non_iid_unbalanced(server_id,args)
-            #cls_freqs=iid_balanced(args,server_id,server_labels)
-            #print("CLS freq",cls_freqs)
-            batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
-            #print("batch frequencies", batch_freqs)
-            gammas = [1.0, 1e-3, 50.0]
-            sigmas = [1.0, 0.1, 0.5]
-            sigma0s = [1.0, 10.0]
-            best_test_acc, best_train_acc, best_weights, best_sigma, best_gamma, best_sigma0 = -1, -1, None, -1, -1, -1
-            for gamma, sigma, sigma0 in product(gammas, sigmas, sigma0s):
-                print("Gamma: ", gamma, "Sigma: ", sigma, "Sigma0: ", sigma0)
-                hungarian_weights , _ = pdm_multilayer_group_descent(
-                    batch_weights, sigma0_layers=sigma0, sigma_layers=sigma, batch_frequencies=batch_freqs, it=0,
-                    gamma_layers=gamma
+            # print global training loss after every 'i' rounds
+            # if (round+1) % print_every == 0:
+            print(f' \nAvg Training Stats after {round + 1} global rounds:')
+            print(f'Training Loss : {np.mean(np.array(train_loss))}')
+            print('Train Accuracy: {:.2f}% \n'.format(train_accuracy[-1]))
+
+        # Test inference after completion of training
+        test_acc, test_loss = test_inference(args, global_model, test_dataset)
+
+        print(f' \n Results after {args.communication_rounds} global rounds of training:')
+        print("|---- Avg Train Accuracy: {:.2f}%".format(train_accuracy[-1]))
+        print("|---- Test Accuracy: {:.2f}%".format(test_acc))
+
+        # Saving the objects train_loss and train_accuracy
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+
+        file_name = dir_path + '/{}_{}_{}_{}_{}_{}_{}_alpha{}.pkl'. \
+            format(args.dataset, args.model, args.communication_rounds, args.num_users, args.frac,
+                   args.local_ep, args.local_batch_size, args.alpha)
+
+        with open(file_name, 'wb') as f:
+            pickle.dump([train_loss, train_accuracy], f)
+
+        print('\n Total Run Time: {0:0.4f}'.format(time.time() - start_time))
+
+        # PLOTTING (optional)
+        import matplotlib
+        import matplotlib.pyplot as plt
+
+        matplotlib.use('Agg')
+
+        # Plot Loss curve
+        plt.figure()
+        plt.title('Training Loss vs Communication rounds')
+        plt.plot(range(len(train_loss)), train_loss, color='r')
+        plt.ylabel('Training loss')
+        plt.xlabel('Communication Rounds')
+        plt.savefig(dir_path + '/loss_federated.png'.
+                    format(args.dataset, args.model, args.communication_rounds, args.frac,
+                           args.iid, args.local_ep, args.local_batch_size))
+        # plt.show()
+
+        # # Plot Average Accuracy vs Communication rounds
+        plt.figure()
+        plt.title('Average Accuracy vs Communication rounds')
+        plt.plot(range(len(train_accuracy)), train_accuracy, color='k')
+        plt.ylabel('Average Accuracy')
+        plt.xlabel('Communication Rounds')
+        plt.savefig(dir_path + '/accuracy_federated.png'.
+                    format(args.dataset, args.model, args.communication_rounds, args.frac,
+                           args.iid, args.local_ep, args.local_batch_size))
+        # plt.show()
+
+    elif args.comm_type == "fedma":
+
+        local_weights, local_losses = [], []
+
+        global_model.train()
+        m = max(int(args.frac * args.num_users), 1)
+        idxs_users = np.random.choice(range(args.num_users), m, replace=False)
+        batch_weights = pdm_prepare_weights(global_model)
+        n_nets=args.n_nets
+        #print("batch_weights",batch_weights)
+        n_classes = args.net_config
+        #print("n classes",len(n_classes), type(n_classes))
+        n_classes = n_classes[-1]
+        cls_freqs=cls_count
+        #_,_,_,_,net_dataidx_map,cls_freqs = partition_data(train_dataset, test_dataset, args.n_nets)
+        #_,server_labels,server_id=get_server(train_dataset)
+        #cls_freqs = non_iid_unbalanced(server_id,args)
+        #cls_freqs=iid_balanced(args,server_id,server_labels)
+        #print("CLS freq",cls_freqs)
+        batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
+        #print("batch frequencies", batch_freqs)
+        """gammas = [1.0, 1e-3, 50.0]
+        sigmas = [1.0, 0.1, 0.5]
+        sigma0s = [1.0, 10.0]"""
+        sigma0s = [1.0]
+        sigmas = [1.0]
+        gammas = [1.0]
+        best_test_acc, best_train_acc, best_weights, best_sigma, best_gamma, best_sigma0 = -1, -1, None, -1, -1, -1
+        for gamma, sigma, sigma0 in product(gammas, sigmas, sigma0s):
+            print("Gamma: ", gamma, "Sigma: ", sigma, "Sigma0: ", sigma0)
+            hungarian_weights , assignment = pdm_multilayer_group_descent(
+                batch_weights, sigma0_layers=sigma0, sigma_layers=sigma, batch_frequencies=batch_freqs, it=0,
+                gamma_layers=gamma
+            )
+            #print("hungarian weights",hungarian_weights)
+            with open("hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".txt", "w") as output:
+                output.write(str(hungarian_weights))
+            #train_dataset, test_dataset = get_dataset(args)
+
+            for idx in idxs_users:
+                idxs = (list(user_groups[idx]))
+                idxs_train = list(idxs[:int(0.8 * len(idxs))])
+                idxs_test = list(idxs[int(0.8 * len(idxs)):])
+                print("indexes",idx,"test",len(idxs_test),"train",len(idxs_train))
+
+                tr_dataset, _ = get_dataset(args)
+
+                train_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_train),
+                                         batch_size=args.local_batch_size, shuffle=True, drop_last=False)
+                # maybe add num_workers
+                test_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_test),
+                                        batch_size=args.local_batch_size, shuffle=False)
+                '''
+                train_dataset, validloader = get_train_valid_loader(args,
+                                                                  valid_size=0.2,
+                                                                  shuffle=True,
+                                                                  pin_memory=False)
+                test_dataset = get_test_loader(args,
+                                             shuffle=True,
+                                             pin_memory=False)'''
+                train_acc, test_acc, _, _,nets = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes,cls_freqs,n_nets,args=args_parser())
+                res = {}
+                key = (sigma0, sigma, gamma)
+                res[key] = {}
+                """for k in key:
+                we should discuss about it later on
+                """
+                res[key]['shapes'] = list(map(lambda x: x.shape, hungarian_weights))
+                res[key]['train_accuracy'] = train_acc
+                res[key]['test_accuracy'] = test_acc
+
+                #print('Sigma0: %s. Sigma: %s. Shapes: %s, Accuracy: %f' %(
+                    #str(sigma0), str(sigma), str(res[key]['shapes']), test_acc))
+
+                if train_acc > best_train_acc:
+                    best_test_acc = test_acc
+                    best_train_acc = train_acc
+                    best_weights = hungarian_weights
+                    best_sigma = sigma
+                    best_gamma = gamma
+                    best_sigma0 = sigma0
+                print("Based on train")
+                print('Best sigma0: %f, Best sigma: %f, Best Gamma: %f, Best accuracy (Test): %f. Training acc: %f' % (
+                    best_sigma0, best_sigma, best_gamma, best_test_acc, best_train_acc))
+                if test_acc > best_test_acc:
+                    best_test_acc = test_acc
+                    best_train_acc = train_acc
+                    best_weights = hungarian_weights
+                    best_sigma = sigma
+                    best_gamma = gamma
+                    best_sigma0 = sigma0
+                print("Based on test")
+                print('Best sigma0: %f, Best sigma: %f, Best Gamma: %f, Best accuracy (Test): %f. Training acc: %f' % (
+                    best_sigma0, best_sigma, best_gamma, best_test_acc, best_train_acc))
+
+        print("Running Iterative PDM matching procedure")
+        logging.debug("Running Iterative PDM matching procedure")
+
+        sigma0s = [1.0]
+        sigmas = [1.0]
+        gammas = [1.0]
+
+        for (sigma0, sigma, gamma) in product(sigma0s, sigmas, gammas):
+            logging.debug("Parameter setting: sigma0 = %f, sigma = %f, gamma = %f" % (sigma0, sigma, gamma))
+
+            iter_nets = copy.deepcopy(nets)
+            assignment = None
+
+            # Run for communication rounds iterations
+            for i, comm_round in enumerate(range(args.communication_rounds)):
+                print(f'\n | Global Training Round : {comm_round + 1} |\n')
+
+                it = 3
+
+                iter_nets_list = list(iter_nets.values())
+
+                net_weights_new, train_acc, test_acc, new_shape, assignment, hungarian_weights, \
+                conf_matrix_train, conf_matrix_test = compute_iterative_pdm_matching(
+                    iter_nets_list, train_dataset, test_dataset, cls_count, args.net_config[-1],
+                    sigma, sigma0, gamma, it, old_assignment=assignment
                 )
-                #print("hungarian weights",hungarian_weights)
-                with open("hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".txt", "w") as output:
-                    output.write(str(hungarian_weights))
-                #train_dataset, test_dataset = get_dataset(args)
 
-                for idx in idxs_users:
-                    idxs = list(user_groups[idx])
-                    idxs_train = list(idxs[:int(0.8 * len(idxs))])
-                    idxs_test = list(idxs[int(0.8 * len(idxs)):])
+                logging.debug("Communication: %d, Train acc: %f, Test acc: %f, Shapes: %s" % (
+                comm_round, train_acc, test_acc, str(new_shape)))
+                logging.debug('CENTRAL MODEL CONFUSION MATRIX')
+                logging.debug('Train data confusion matrix: \n %s' % str(conf_matrix_train))
+                logging.debug('Test data confusion matrix: \n %s' % str(conf_matrix_test))
 
-                    tr_dataset, _ = get_dataset(args)
+                iter_nets = load_new_state(iter_nets, net_weights_new)
 
+                expepochs = args.iter_epochs if args.iter_epochs is not None else args.epochs
+
+                # Train these networks again
+                for net_id, net in iter_nets.items():
+                    dataidxs = list(user_groups[net_id])
+                    idxs_train = list(dataidxs[:int(0.8 * len(dataidxs))])
+                    idxs_test = list(dataidxs[int(0.8 * len(dataidxs)):])
+                    print("Training network %s. n_training: %d" % (str(net_id), len(dataidxs)))
                     train_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_train),
-                                             batch_size=args.local_batch_size, shuffle=True, drop_last=False)
+                                                                batch_size=args.local_batch_size, shuffle=True,
+                                                                drop_last=False)
                     # maybe add num_workers
                     test_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_test),
-                                            batch_size=args.local_batch_size, shuffle=False)
-                    '''
-                    train_dataset, validloader = get_train_valid_loader(args,
-                                                                      valid_size=0.2,
-                                                                      shuffle=True,
-                                                                      pin_memory=False)
-                    test_dataset = get_test_loader(args,
-                                                 shuffle=True,
-                                                 pin_memory=False)'''
-                    train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes,cls_freqs,n_nets,args=args_parser())
-                    res = {}
-                    key = (sigma0, sigma, gamma)
-                    res[key] = {}
-                    """for k in key:
-                    we should discuss about it later on
-                    """
-                    res[key]['shapes'] = list(map(lambda x: x.shape, hungarian_weights))
-                    res[key]['train_accuracy'] = train_acc
-                    res[key]['test_accuracy'] = test_acc
-
-                    #print('Sigma0: %s. Sigma: %s. Shapes: %s, Accuracy: %f' %(
-                        #str(sigma0), str(sigma), str(res[key]['shapes']), test_acc))
-
-                    if train_acc > best_train_acc:
-                        best_test_acc = test_acc
-                        best_train_acc = train_acc
-                        best_weights = hungarian_weights
-                        best_sigma = sigma
-                        best_gamma = gamma
-                        best_sigma0 = sigma0
-
-                    print('Best sigma0: %f, Best sigma: %f, Best Gamma: %f, Best accuracy (Test): %f. Training acc: %f' % (
-                        best_sigma0, best_sigma, best_gamma, best_test_acc, best_train_acc))
+                                                               batch_size=args.local_batch_size, shuffle=False)
+                    #net_train_dl, net_test_dl = get_dataloader(args.dataset, args.datadir, 32, 32, dataidxs)
+                    train_net(net_id, net, train_dataset, test_dataset, expepochs, args)
 
 
+    else:
+        print("you did not choose a correct communication type")
 
 
-
-        else:
-            print("you did not choose a correct communication type")
-
-
-
-        '''# update global weights
-        global_model.load_state_dict(global_weights)
-
-        loss_avg = sum(local_losses) / len(local_losses)
-        train_loss.append(loss_avg)
-
-        # Calculate avg training accuracy over all users at every round
-        list_acc, list_loss = [], []
-        global_model.eval()
-        for c in range(args.num_users):
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                      idxs=user_groups[c], logger=logger)
-            acc, loss = local_model.inference(model=global_model)
-            #print("Acc:", acc)
-            list_acc.append(acc)
-            list_loss.append(loss)
-
-        train_accuracy.append(sum(list_acc)/len(list_acc))'''
-
-
-        # print global training loss after every 'i' rounds
-        #if (round+1) % print_every == 0:
-        print(f' \nAvg Training Stats after {round + 1} global rounds:')
-        print(f'Training Loss : {np.mean(np.array(train_loss))}')
-        print('Train Accuracy: {:.2f}% \n'.format(train_accuracy[-1]))
-
-    # Test inference after completion of training
-    test_acc, test_loss = test_inference(args, global_model, test_dataset)
-
-    print(f' \n Results after {args.communication_rounds} global rounds of training:')
-    print("|---- Avg Train Accuracy: {:.2f}%".format(train_accuracy[-1]))
-    print("|---- Test Accuracy: {:.2f}%".format(test_acc))
-
-    #Saving the objects train_loss and train_accuracy
-    dir_path = os.path.dirname(os.path.realpath(__file__))
-
-    file_name = dir_path+'/{}_{}_{}_{}_{}_{}_{}_alpha{}.pkl'.\
-       format(args.dataset, args.model, args.communication_rounds, args.num_users, args.frac,
-               args.local_ep, args.local_batch_size, args.alpha)
-
-    with open(file_name, 'wb') as f:
-       pickle.dump([train_loss, train_accuracy], f)
-
-    print('\n Total Run Time: {0:0.4f}'.format(time.time()-start_time))
-
-    # PLOTTING (optional)
-    import matplotlib
-    import matplotlib.pyplot as plt
-    matplotlib.use('Agg')
-
-    # Plot Loss curve
-    plt.figure()
-    plt.title('Training Loss vs Communication rounds')
-    plt.plot(range(len(train_loss)), train_loss, color='r')
-    plt.ylabel('Training loss')
-    plt.xlabel('Communication Rounds')
-    plt.savefig(dir_path+'/loss_federated.png'.
-                format(args.dataset, args.model, args.communication_rounds, args.frac,
-                        args.iid, args.local_ep, args.local_batch_size))
-    #plt.show()
-
-    # # Plot Average Accuracy vs Communication rounds
-    plt.figure()
-    plt.title('Average Accuracy vs Communication rounds')
-    plt.plot(range(len(train_accuracy)), train_accuracy, color='k')
-    plt.ylabel('Average Accuracy')
-    plt.xlabel('Communication Rounds')
-    plt.savefig(dir_path+'/accuracy_federated.png'.
-                format(args.dataset, args.model, args.communication_rounds, args.frac,
-                       args.iid, args.local_ep, args.local_batch_size))
-    #plt.show()

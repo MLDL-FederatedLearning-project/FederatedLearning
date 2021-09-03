@@ -13,13 +13,13 @@ def args_parser():
                         help="default value = 1 for the centralized model, for the federated put 0")
     parser.add_argument('--epochs', type=int, default=0,
                         help="number of rounds of training")
-    parser.add_argument('--communication_rounds', type=int, default=1,
+    parser.add_argument('--communication_rounds', type=int, default=4,
                         help="number of communication rounds")
     parser.add_argument('--batch_size', type=int, default=64,
                         help="BATCH_SIZE")
-    parser.add_argument('--num_users', type=int, default=10,
+    parser.add_argument('--num_users', type=int, default=100,
                         help="number of users: K")
-    parser.add_argument('--frac', type=float, default=0.1,
+    parser.add_argument('--frac', type=float, default=0.01,
                         help='the fraction of clients: C')
     parser.add_argument('--local_ep', type=int, default=2,
                         help="the number of local epochs: E")
@@ -61,9 +61,9 @@ def args_parser():
                         to a specific GPU ID. Default set to use CPU.")
     parser.add_argument('--optimizer', type=str, default='sgd', help="type \
                         of optimizer")
-    parser.add_argument('--iid', type=int, default=1,
+    parser.add_argument('--iid', type=int, default=0,
                         help='Default set to iid=1. For non iid use 0')
-    parser.add_argument('--balanced', type=int, default=1,
+    parser.add_argument('--balanced', type=int, default=0,
                         help='Default set to balanced =1. For unbalanced set to 0')
     parser.add_argument('--stopping_rounds', type=int, default=10,
                         help='rounds of early stopping')

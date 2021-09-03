@@ -188,10 +188,10 @@ def get_user_groups(args):
         server_labels, dict_users, traindata_cls_counts= non_iid_unbalanced(args,server_id, server_labels)
 
     if args.iid == 1 and args.balanced == 1:
-        server_labels, new_dict, traindata_cls_counts = iid_balanced(args,server_id, server_labels)
+        server_labels, dict_users, traindata_cls_counts = iid_balanced(args,server_id, server_labels)
 
     if args.iid == 1 and args.balanced == 0:
-        user_groups = iid_unbalanced(args, server_id, server_labels)
+        server_labels, dict_users, traindata_cls_counts = iid_unbalanced(args, server_id, server_labels)
 
     return server_labels, dict_users, traindata_cls_counts
 

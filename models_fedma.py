@@ -6,15 +6,14 @@ from models import CNNContainer
 import torch
 from sklearn.metrics import confusion_matrix
 import torch.nn.functional as F
+import logging
 
 
-
-def pdm_prepare_weights(net):
-    #print("net ", net)
+def pdm_prepare_weights(nets):
+    print("net inside prepare weights", nets)
     weights = []
-
     layer_i = 1
-    statedict = net.state_dict()
+    statedict = nets.state_dict()
     #print("stated dict in preparartion of the weights",statedict.keys())
     net_weights = []
     while True:
@@ -31,6 +30,7 @@ def pdm_prepare_weights(net):
     weights.append(net_weights)
 
     return weights
+
 
 
 def compute_pdm_matching_multilayer(models, train_dl, test_dl, cls_freqs, n_classes, sigma0=None, it=0, sigma=None, gamma=None):
@@ -50,7 +50,7 @@ def compute_pdm_matching_multilayer(models, train_dl, test_dl, cls_freqs, n_clas
             batch_weights, sigma0_layers=sigma0, sigma_layers=sigma, batch_frequencies=batch_freqs, it=it, gamma_layers=gamma
         )
 
-        train_acc, test_acc, _, _ = compute_pdm_net_accuracy(hungarian_weights, train_dl, test_dl, n_classes,cls_freqs,n_nets,args=args_parser)
+        train_acc, test_acc, _, _, nets = compute_pdm_net_accuracy(hungarian_weights, train_dl, test_dl, n_classes,cls_freqs,n_nets,args=args_parser)
 
         key = (sigma0, sigma, gamma)
         res[key] = {}
@@ -182,6 +182,7 @@ def pdm_multilayer_group_descent(batch_weights, batch_frequencies, sigma_layers,
     n_layers = int(len(batch_weights[0]) / 2)
     #print("batch weights", batch_weights, "len of that", len(batch_weights))
     J = len(batch_weights)
+    print("batch weights",batch_weights)
     D = batch_weights[0][0].shape[0]
     K = batch_weights[0][-1].shape[0]
 
@@ -288,6 +289,47 @@ def record_net_data_stats(y_train, net_dataidx_map):
     return net_cls_counts
 '''
 
+
+def pdm_other_prepare_weights(nets):
+    weights = []
+
+    for net_i, net in enumerate(nets):
+        layer_i = 0
+        statedict = net.state_dict()
+        net_weights = []
+        while True:
+
+            if ('fc%d.weight' % layer_i) not in statedict.keys():
+                break
+
+            layer_weight = statedict['fc%d.weight' % layer_i].numpy().T
+            layer_bias = statedict['fc%d.bias' % layer_i].numpy()
+
+            net_weights.extend([layer_weight, layer_bias])
+            layer_i += 1
+
+        weights.append(net_weights)
+
+    return weights
+
+
+def compute_iterative_pdm_matching(models, train_dl, test_dl, cls_freqs, n_classes, sigma, sigma0, gamma, it, old_assignment=None):
+
+    batch_weights = pdm_other_prepare_weights(models)
+    batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
+
+    hungarian_weights, assignments = pdm_multilayer_group_descent(
+        batch_weights, batch_freqs, sigma_layers=sigma, sigma0_layers=sigma0, gamma_layers=gamma, it=it, assignments_old=old_assignment
+    )
+
+    train_acc, test_acc, conf_matrix_train, conf_matrix_test, _ = compute_pdm_net_accuracy(hungarian_weights, train_dl, test_dl, n_classes)
+
+    batch_weights_new = [pdm_build_init(hungarian_weights, assignments, j) for j in range(len(models))]
+    matched_net_shapes = list(map(lambda x: x.shape, hungarian_weights))
+
+    return batch_weights_new, train_acc, test_acc, matched_net_shapes, assignments, hungarian_weights, conf_matrix_train, conf_matrix_test
+
+
 def record_net_data_stats(y_train, net_dataidx_map):
     net_cls_counts = {}
     for net_i, dataidx in net_dataidx_map.items():
@@ -326,7 +368,7 @@ def partition_data(train, test, n_nets, alpha=0.5):
     print("net data index", net_dataidx_map)
     traindata_cls_counts = record_net_data_stats(y_train, net_dataidx_map)
     #print("train data cls count",traindata_cls_counts)
-    return traindata_cls_counts
+    return (X_train, y_train, X_test, y_test, net_dataidx_map, traindata_cls_counts)
 
 
 def prepare_weight_matrix(n_classes, weights: dict):
@@ -366,7 +408,7 @@ def normalize_weights(weights):
             Z = weight.data.numpy()
         else:
             Z = Z + weight.data.numpy()
-    print("z in normalize",Z)
+    #print("z in normalize",Z)
     for mi, weight in weights.items():
         weights_norm[mi] = weight / torch.from_numpy(Z + eps)
     #print("weights normalized",weights_norm)
@@ -378,7 +420,7 @@ def get_weighted_average_pred(models: list, weights: dict, images,labels,optimiz
     criterion = torch.nn.NLLLoss()
     # Compute the predictions
     for model_i, model in enumerate(models):
-        print("model_i",model_i,"model",model)
+        #print("model_i",model_i,"model",model)
         #print("x value",x)
         #print("x shape",x.shape)
         #print("x",x)
@@ -402,7 +444,7 @@ def get_weighted_average_pred(models: list, weights: dict, images,labels,optimiz
         if out_weighted is None:
             out_weighted = (out * weights[model_i])
         else:
-            out_weighted += (out * weights[model_ii])
+            out_weighted += (out * weights[model_i])
 
     return out_weighted
 
@@ -441,20 +483,19 @@ def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_cou
             #print("models",models)
             #print("weights norm",weights_norm)
             out = get_weighted_average_pred(models, weights_norm, images, target, optimizer)
-            print("out",out)
+            #print("out",out)
             _, pred_label = torch.max(out, 1)
             pred_label = pred_label.view(-1)
-            print("pred label",pred_label)
             total += images.data.size()[0]
             correct += (pred_label == target.data).sum().item()
             pred_labels_list = np.append(pred_labels_list, pred_label.numpy())
             true_labels_list = np.append(true_labels_list, target.data.numpy())
-            #print("correct", correct, "total", total, "batch index", batch_idx)
-            #print("pred label",pred_labels_list)
+            print("correct", correct, "total", total, "batch index", batch_idx)
+            print("pred label",pred_labels_list)
             #print("true label list", true_labels_list)
 
 
-    #print(correct, total)
+    print(correct, total)
 
     conf_matrix = confusion_matrix(true_labels_list, pred_labels_list)
 
@@ -474,11 +515,10 @@ def init_nets(input_channel,num_filters, kernel_size, input_dim, hidden_dims, ou
 
 	for net_i in range(n_nets):
 		net = CNNContainer(input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim)
-
-
 		nets[net_i] = net
 
 	return nets
+
 
 def load_new_state(nets, new_weights):
 
@@ -524,31 +564,108 @@ def compute_pdm_net_accuracy(weights, train_dl, test_dl, n_classes,cls_freqs,n_n
     #print("num filter",num_filters)
     kernel_size = 5
     n_nets=args.n_nets
+    nets = {net_i: None for net_i in range(n_nets)}
+    for net_i in range(n_nets):
+        pdm_net=CNNContainer(input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim)
+        #pdm_net = FcNet(input_dim, hidden_dims, output_dim)
+        statedict = pdm_net.state_dict()
 
-    pdm_net=CNNContainer(input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim)
-    #pdm_net = init_nets(input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim,n_nets,args=args_parser())
-    #pdm_net = FcNet(input_dim, hidden_dims, output_dim)
+        i = 0
+        layer_i = 0
+        while i < len(weights):
+            weight = weights[i]
+            i += 1
+            bias = weights[i]
+            i += 1
+            number_conv = layer_i+1
+            statedict['fc%d.weight' % number_conv] = torch.from_numpy(weight.T)
+            statedict['fc%d.bias' % number_conv] = torch.from_numpy(bias)
+            """statedict['layers.%d.weight' % layer_i] = torch.from_numpy(weight.T)
+            statedict['layers.%d.bias' % layer_i] = torch.from_numpy(bias)"""
+            layer_i += 1
+        #print("Statedict",statedict)
 
-    statedict = pdm_net.state_dict()
-    # print(pdm_net)
+        pdm_net.load_state_dict(statedict)
+        nets[net_i] = pdm_net
+    print("nets", nets)
+    nets_list = list(nets.values())
 
-    i = 0
-    layer_i = 0
-    while i < len(weights):
-        weight = weights[i]
-        i += 1
-        bias = weights[i]
-        i += 1
-        number_conv = layer_i+1
-        statedict['fc%d.weight' % number_conv] = torch.from_numpy(weight.T)
-        statedict['fc%d.bias' % number_conv] = torch.from_numpy(bias)
-        """statedict['layers.%d.weight' % layer_i] = torch.from_numpy(weight.T)
-        statedict['layers.%d.bias' % layer_i] = torch.from_numpy(bias)"""
-        layer_i += 1
-    #print("Statedict",statedict)
-    pdm_net.load_state_dict(statedict)
+    train_acc, conf_matrix_train = compute_ensemble_accuracy(nets_list, train_dl, n_classes,train_cls_counts=cls_freqs ,uniform_weights=True,sanity_weights=False)
+    test_acc, conf_matrix_test = compute_ensemble_accuracy(nets_list, test_dl, n_classes,train_cls_counts=cls_freqs, uniform_weights=True,sanity_weights=False)
 
-    train_acc, conf_matrix_train = compute_ensemble_accuracy([pdm_net], train_dl, n_classes,train_cls_counts=cls_freqs ,uniform_weights=False,sanity_weights=False)
-    test_acc, conf_matrix_test = compute_ensemble_accuracy([pdm_net], test_dl, n_classes,train_cls_counts=cls_freqs, uniform_weights=False,sanity_weights=False)
+    return train_acc, test_acc, conf_matrix_train, conf_matrix_test,nets
 
-    return train_acc, test_acc, conf_matrix_train, conf_matrix_test
+
+def train_net(net_id, net, train_dataloader, test_dataloader, epochs, args=args_parser()):
+    logging.debug('Training network %s' % str(net_id))
+    logging.debug('n_training: %d' % len(train_dataloader))
+    logging.debug('n_test: %d' % len(test_dataloader))
+
+    train_acc,_ = compute_ensemble_accuracy(net, train_dataloader,args.num_classes)
+    test_acc, conf_matrix = compute_ensemble_accuracy(net, test_dataloader, args.num_classes)
+
+    logging.debug('>> Pre-Training Training accuracy: %f' % train_acc)
+    logging.debug('>> Pre-Training Test accuracy: %f' % test_acc)
+
+    optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr,
+                                momentum=args.momentum, weight_decay=args.weight_decay)
+
+    criterion = nn.CrossEntropyLoss()
+
+    cnt = 0
+    losses, running_losses = [], []
+
+    for epoch in range(epochs):
+        for batch_idx, (x, target) in enumerate(train_dataloader):
+
+
+
+            optimizer.zero_grad()
+            x.requires_grad = True
+            target.requires_grad = False
+            target = target.long()
+
+            out = net(x)
+            loss = criterion(out, target)
+            '''
+            if reg_base_weights is None:
+                # Apply standard L2-regularization
+                for param in net.parameters():
+                    l2_reg = l2_reg + 0.5 * torch.pow(param, 2).sum()
+            else:
+            # Apply Iterative PDM regularization
+            for pname, param in net.named_parameters():
+                if "bias" in pname:
+                    continue
+
+                layer_i = int(pname.split('.')[1])
+
+                if pname.split('.')[2] == "weight":
+                    weight_i = layer_i * 2
+                    transpose = True
+
+                ref_param = reg_base_weights[weight_i]
+                ref_param = ref_param.T if transpose else ref_param
+
+                l2_reg = l2_reg + 0.5 * torch.pow((param - torch.from_numpy(ref_param).float()), 2).sum()'''
+
+            #loss = loss + reg * l2_reg
+
+            loss.backward()
+            optimizer.step()
+
+            cnt += 1
+            losses.append(loss.item())
+
+        #logging.debug('Epoch: %d Loss: %f L2 loss: %f' % (epoch, loss.item(), reg * l2_reg))
+        logging.debug('Epoch: %d Loss: %f ' % (epoch, loss.item()))
+
+    train_acc = compute_accuracy(net, train_dataloader)
+    test_acc, conf_matrix = compute_accuracy(net, test_dataloader, get_confusion_matrix=True)
+
+    logging.debug('>> Training accuracy: %f' % train_acc)
+    logging.debug('>> Test accuracy: %f' % test_acc)
+
+    logging.debug(' ** Training complete **')
+
+    return train_acc, test_acc

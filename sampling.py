@@ -81,6 +81,8 @@ def non_iid_unbalanced(args,server_id, server_labels):
       dict_users[user] = np.array(np.random.choice(all_idxs, num_items_unbalanced[user], replace=False))
       all_idxs = list(set(all_idxs) - set(dict_users[user]))
     traindata_cls_counts = record_net_data_stats(np.array(server_labels), dict_users)
+    #print("dict users",dict_users,"train data cls counts",traindata_cls_counts)
+
     return server_labels, dict_users, traindata_cls_counts
 
 def non_iid_balanced(args, server_id, server_labels):
