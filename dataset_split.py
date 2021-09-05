@@ -1,17 +1,15 @@
 import torch
-import torchvision
-from torchvision import datasets, transforms
-from torch.utils.data.sampler import SubsetRandomSampler
 import numpy as np
-import pandas as pd
+
+
+from torchvision import datasets
+from torchvision import transforms
+from torch.utils.data.sampler import SubsetRandomSampler
+from sampling import get_server,get_dict_labels,random_number_images, non_iid_unbalanced, iid_unbalanced, non_iid_balanced, iid_balanced, record_net_data_stats
 import random
-import collections
-from collections import defaultdict
-from sampling import get_server,get_dict_labels,random_number_images, non_iid_unbalanced, iid_unbalanced, non_iid_balanced, iid_balanced
-import argparse
 from options import args_parser
 
-#from options_FedMA import add_fit_args
+
 
 args = args_parser()
 def get_train_valid_loader(args,
@@ -133,13 +131,10 @@ def get_test_loader(args,
         root=args.data_dir, train=False,
         download=True, transform=transform,
     )
-    if args.centralized ==1:
-          data_loader = torch.utils.data.DataLoader(
-              dataset, batch_size=args.batch_size, shuffle=shuffle)
-    else:
-            data_loader = torch.utils.data.DataLoader(
-              dataset, batch_size=args.batch_size, shuffle=shuffle
-         )
+
+    data_loader = torch.utils.data.DataLoader(
+      dataset, batch_size=args.batch_size, shuffle=shuffle
+    )
 
     return data_loader
 
@@ -182,19 +177,18 @@ def get_user_groups(args):
     server_data, server_labels, server_id = get_server(train_dataset)
 
     if args.iid == 0 and args.balanced == 1:
-        server_labels, dict_users, traindata_cls_counts = non_iid_balanced(args, server_id, server_labels)
+        server_labels, user_groups, traindata_cls_counts = non_iid_balanced(args, server_id, server_labels)
 
     if args.iid == 0 and args.balanced == 0:
-        server_labels, dict_users, traindata_cls_counts= non_iid_unbalanced(args,server_id, server_labels)
+        server_labels, user_groups, traindata_cls_counts = non_iid_unbalanced(args,server_id, server_labels)
 
     if args.iid == 1 and args.balanced == 1:
-        server_labels, dict_users, traindata_cls_counts = iid_balanced(args,server_id, server_labels)
+        server_labels, user_groups, traindata_cls_counts = iid_balanced(args,server_id, server_labels)
 
     if args.iid == 1 and args.balanced == 0:
-        server_labels, dict_users, traindata_cls_counts = iid_unbalanced(args, server_id, server_labels)
-
-    return server_labels, dict_users, traindata_cls_counts
-
+        server_labels, user_groups, traindata_cls_counts = iid_unbalanced(args, server_id, server_labels)
+    # if you need only the user_groups, then you should write _, user_groups, _ = get_user_groups(args)
+    return server_labels, user_groups, traindata_cls_counts
 def get_user_groups_alpha(args):
     train_dataset,_ = get_dataset(args)
     users = np.arange(0,args.num_users)
@@ -234,7 +228,9 @@ def get_user_groups_alpha(args):
 args=args_parser()
 train_dataset, _= get_dataset(args)
 server_data, server_labels, server_id= get_server(train_dataset)
-new_dict, nets_cls_counts= iid_unbalanced(args,server_id, server_labels)
 
-print(nets_cls_counts)
+server_labels, dict_users, traindata_cls_counts = iid_balanced(args,server_id, server_labels)
+#cls_counts=record_net_data_stats(server_labels, user_groups)
+print(dict_users)
+print(traindata_cls_counts)
 '''
