@@ -13,13 +13,13 @@ def args_parser():
                         help="default value = 1 for the centralized model, for the federated put 0")
     parser.add_argument('--epochs', type=int, default=0,
                         help="number of rounds of training")
-    parser.add_argument('--communication_rounds', type=int, default=4,
+    parser.add_argument('--communication_rounds', type=int, default=10,
                         help="number of communication rounds")
     parser.add_argument('--batch_size', type=int, default=64,
                         help="BATCH_SIZE")
     parser.add_argument('--num_users', type=int, default=100,
                         help="number of users: K")
-    parser.add_argument('--frac', type=float, default=0.01,
+    parser.add_argument('--frac', type=float, default=0.1,
                         help='the fraction of clients: C')
     parser.add_argument('--local_ep', type=int, default=2,
                         help="the number of local epochs: E")
@@ -85,7 +85,8 @@ def args_parser():
     parser.add_argument('--partition_step', type=int, default=0, metavar='PS',
                         help='how many sub groups we are going to use for a particular training process')
     parser.add_argument('--n_nets', type=int, default=10, metavar='NN',
-                        help='number of workers in a distributed cluster')
+                        help='number of workers in a distributed cluster which should be multiply of number of users '
+                             'and fraction of the user')
     parser.add_argument('--retrain', type=bool, default=False,
                         help='whether to retrain the model or load model locally')
     parser.add_argument('--minor-frac', type=float, default=0.05, metavar='N',

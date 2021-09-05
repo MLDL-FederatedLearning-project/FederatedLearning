@@ -176,7 +176,7 @@ if __name__ == '__main__':
         m = max(int(args.frac * args.num_users), 1)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
         batch_weights = pdm_prepare_weights(global_model)
-        n_nets=args.n_nets
+        n_nets = int(args.num_users * args.frac)
         #print("batch_weights",batch_weights)
         n_classes = args.net_config
         #print("n classes",len(n_classes), type(n_classes))
@@ -189,12 +189,12 @@ if __name__ == '__main__':
         #print("CLS freq",cls_freqs)
         batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
         #print("batch frequencies", batch_freqs)
-        """gammas = [1.0, 1e-3, 50.0]
+        gammas = [1.0, 1e-3, 50.0]
         sigmas = [1.0, 0.1, 0.5]
-        sigma0s = [1.0, 10.0]"""
-        sigma0s = [1.0]
+        sigma0s = [1.0, 10.0]
+        """sigma0s = [1.0]
         sigmas = [1.0]
-        gammas = [1.0]
+        gammas = [1.0]"""
         best_test_acc, best_train_acc, best_weights, best_sigma, best_gamma, best_sigma0 = -1, -1, None, -1, -1, -1
         for gamma, sigma, sigma0 in product(gammas, sigmas, sigma0s):
             print("Gamma: ", gamma, "Sigma: ", sigma, "Sigma0: ", sigma0)
@@ -203,7 +203,7 @@ if __name__ == '__main__':
                 gamma_layers=gamma
             )
             #print("hungarian weights",hungarian_weights)
-            with open("hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".txt", "w") as output:
+            with open(args.data_dir+"\hungarian_weights\hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".txt", "w") as output:
                 output.write(str(hungarian_weights))
             #train_dataset, test_dataset = get_dataset(args)
 
@@ -228,7 +228,7 @@ if __name__ == '__main__':
                 test_dataset = get_test_loader(args,
                                              shuffle=True,
                                              pin_memory=False)'''
-                train_acc, test_acc, _, _,nets = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes,cls_freqs,n_nets,args=args_parser())
+                train_acc, test_acc, _, _,nets = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes,cls_freqs)
                 res = {}
                 key = (sigma0, sigma, gamma)
                 res[key] = {}
@@ -266,10 +266,12 @@ if __name__ == '__main__':
         print("Running Iterative PDM matching procedure")
         logging.debug("Running Iterative PDM matching procedure")
 
-        sigma0s = [1.0]
+        """sigma0s = [1.0]
         sigmas = [1.0]
-        gammas = [1.0]
-
+        gammas = [1.0]"""
+        gammas = [1.0, 1e-3, 50.0]
+        sigmas = [1.0, 0.1, 0.5]
+        sigma0s = [1.0, 10.0]
         for (sigma0, sigma, gamma) in product(sigma0s, sigmas, gammas):
             logging.debug("Parameter setting: sigma0 = %f, sigma = %f, gamma = %f" % (sigma0, sigma, gamma))
 
@@ -285,20 +287,20 @@ if __name__ == '__main__':
                 iter_nets_list = list(iter_nets.values())
 
                 net_weights_new, train_acc, test_acc, new_shape, assignment, hungarian_weights, \
-                conf_matrix_train, conf_matrix_test = compute_iterative_pdm_matching(
+                conf_matrix_train, conf_matrix_test = compute_iterative_pdm_matching(nets,
                     iter_nets_list, train_dataset, test_dataset, cls_count, args.net_config[-1],
                     sigma, sigma0, gamma, it, old_assignment=assignment
                 )
 
-                logging.debug("Communication: %d, Train acc: %f, Test acc: %f, Shapes: %s" % (
+                print("Communication: %d, Train acc: %f, Test acc: %f, Shapes: %s" % (
                 comm_round, train_acc, test_acc, str(new_shape)))
-                logging.debug('CENTRAL MODEL CONFUSION MATRIX')
-                logging.debug('Train data confusion matrix: \n %s' % str(conf_matrix_train))
-                logging.debug('Test data confusion matrix: \n %s' % str(conf_matrix_test))
+                print('CENTRAL MODEL CONFUSION MATRIX')
+                print('Train data confusion matrix: \n %s' % str(conf_matrix_train))
+                print('Test data confusion matrix: \n %s' % str(conf_matrix_test))
 
                 iter_nets = load_new_state(iter_nets, net_weights_new)
 
-                expepochs = args.iter_epochs if args.iter_epochs is not None else args.epochs
+                expepochs = args.local_ep
 
                 # Train these networks again
                 for net_id, net in iter_nets.items():
@@ -313,7 +315,17 @@ if __name__ == '__main__':
                     test_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_test),
                                                                batch_size=args.local_batch_size, shuffle=False)
                     #net_train_dl, net_test_dl = get_dataloader(args.dataset, args.datadir, 32, 32, dataidxs)
-                    train_net(net_id, net, train_dataset, test_dataset, expepochs, args)
+                    train_acc_train_net, test_acc_train_net = train_net(net_id, net, train_dataset, test_dataset, expepochs, args)
+
+                    file_name = args.data_dir + '/global_rounds/{}_{}_{}_{}_{}_{}_{}_{}_{}_alpha{}.txt'. \
+                        format(args.dataset, args.model, args.communication_rounds, args.num_users, args.frac,
+                               args.local_ep, args.local_batch_size, args.iid, args.balanced, args.alpha)
+
+                    with open(file_name, "a") as f:
+                        f.write(str(comm_round)+" "+str(expepochs)+" "+str(n_nets)+" "+str(train_acc_train_net)+" " +
+                                str(test_acc_train_net)+" \n")
+
+                    print('\n Total Run Time: {0:0.4f}'.format(time.time() - start_time))
 
 
     else:

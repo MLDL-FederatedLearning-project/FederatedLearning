@@ -1,20 +1,21 @@
 import numpy as np
+import torch.nn as nn
 import torchvision.transforms as transforms
 from options import args_parser
-from dataset_split import get_dataset,get_user_groups
+from itertools import product
+from dataset_split import get_dataset, get_user_groups
 from models import CNNContainer
 import torch
 from sklearn.metrics import confusion_matrix
 import torch.nn.functional as F
 import logging
+from scipy.optimize import linear_sum_assignment
 
 
 def pdm_prepare_weights(nets):
-    print("net inside prepare weights", nets)
     weights = []
     layer_i = 1
     statedict = nets.state_dict()
-    #print("stated dict in preparartion of the weights",statedict.keys())
     net_weights = []
     while True:
 
@@ -32,8 +33,8 @@ def pdm_prepare_weights(nets):
     return weights
 
 
-
-def compute_pdm_matching_multilayer(models, train_dl, test_dl, cls_freqs, n_classes, sigma0=None, it=0, sigma=None, gamma=None):
+def compute_pdm_matching_multilayer(models, train_dl, test_dl, cls_freqs, n_classes, sigma0=None, it=0, sigma=None,
+                                    gamma=None):
     batch_weights = pdm_prepare_weights(models)
     batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
     res = {}
@@ -47,10 +48,11 @@ def compute_pdm_matching_multilayer(models, train_dl, test_dl, cls_freqs, n_clas
         print("Gamma: ", gamma, "Sigma: ", sigma, "Sigma0: ", sigma0)
 
         hungarian_weights = pdm_multilayer_group_descent(
-            batch_weights, sigma0_layers=sigma0, sigma_layers=sigma, batch_frequencies=batch_freqs, it=it, gamma_layers=gamma
-        )
+            batch_weights, sigma0_layers=sigma0, sigma_layers=sigma, batch_frequencies=batch_freqs, it=it,
+            gamma_layers=gamma)
 
-        train_acc, test_acc, _, _, nets = compute_pdm_net_accuracy(hungarian_weights, train_dl, test_dl, n_classes,cls_freqs,n_nets,args=args_parser)
+        train_acc, test_acc, _, _, nets = compute_pdm_net_accuracy(hungarian_weights, train_dl, test_dl, n_classes,
+                                                                   cls_freqs)
 
         key = (sigma0, sigma, gamma)
         res[key] = {}
@@ -87,6 +89,65 @@ def pdm_prepare_freq(cls_freqs, n_classes):
         freqs.append(np.array(net_freqs))
 
     return freqs
+
+
+def row_param_cost(global_weights, weights_j_l, global_sigmas, sigma_inv_j):
+
+    match_norms = ((weights_j_l + global_weights) ** 2 / (sigma_inv_j + global_sigmas)).sum(axis=1) - (
+                global_weights ** 2 / global_sigmas).sum(axis=1)
+
+    return match_norms
+
+
+def compute_cost(global_weights, weights_j, global_sigmas, sigma_inv_j, prior_mean_norm, prior_inv_sigma,
+                 popularity_counts, gamma, J):
+
+    Lj = weights_j.shape[0]
+    counts = np.minimum(np.array(popularity_counts), 10)
+    param_cost = np.array([row_param_cost(global_weights, weights_j[l], global_sigmas, sigma_inv_j) for l in range(Lj)])
+    param_cost += np.log(counts / (J - counts))
+
+    ## Nonparametric cost
+    L = global_weights.shape[0]
+    max_added = min(Lj, max(700 - L, 1))
+    nonparam_cost = np.outer((((weights_j + prior_mean_norm) ** 2 / (prior_inv_sigma + sigma_inv_j)).sum(axis=1) - (
+                prior_mean_norm ** 2 / prior_inv_sigma).sum()), np.ones(max_added))
+    cost_pois = 2 * np.log(np.arange(1, max_added + 1))
+    nonparam_cost -= cost_pois
+    nonparam_cost += 2 * np.log(gamma / J)
+
+    full_cost = np.hstack((param_cost, nonparam_cost))
+    return full_cost
+
+
+def matching_upd_j(weights_j, global_weights, sigma_inv_j, global_sigmas, prior_mean_norm, prior_inv_sigma,
+                   popularity_counts, gamma, J):
+
+    L = global_weights.shape[0]
+
+    full_cost = compute_cost(global_weights, weights_j, global_sigmas, sigma_inv_j, prior_mean_norm, prior_inv_sigma,
+                             popularity_counts, gamma, J)
+
+    row_ind, col_ind = linear_sum_assignment(-full_cost)
+
+    assignment_j = []
+
+    new_L = L
+
+    for l, i in zip(row_ind, col_ind):
+        if i < L:
+            popularity_counts[i] += 1
+            assignment_j.append(i)
+            global_weights[i] += weights_j[l]
+            global_sigmas[i] += sigma_inv_j
+        else:  # new neuron
+            popularity_counts += [1]
+            assignment_j.append(new_L)
+            new_L += 1
+            global_weights = np.vstack((global_weights, prior_mean_norm + weights_j[l]))
+            global_sigmas = np.vstack((global_sigmas, prior_inv_sigma + sigma_inv_j))
+
+    return global_weights, global_sigmas, popularity_counts, assignment_j
 
 
 def match_layer(weights_bias, sigma_inv_layer, mean_prior, sigma_inv_prior, gamma, it):
@@ -182,7 +243,7 @@ def pdm_multilayer_group_descent(batch_weights, batch_frequencies, sigma_layers,
     n_layers = int(len(batch_weights[0]) / 2)
     #print("batch weights", batch_weights, "len of that", len(batch_weights))
     J = len(batch_weights)
-    print("batch weights",batch_weights)
+    #print("batch weights",batch_weights)
     D = batch_weights[0][0].shape[0]
     K = batch_weights[0][-1].shape[0]
 
@@ -292,10 +353,9 @@ def record_net_data_stats(y_train, net_dataidx_map):
 
 def pdm_other_prepare_weights(nets):
     weights = []
-
-    for net_i, net in enumerate(nets):
-        layer_i = 0
-        statedict = net.state_dict()
+    for net_i, net in enumerate(nets.items()):
+        layer_i = 1
+        statedict = nets[net_i].state_dict()
         net_weights = []
         while True:
 
@@ -313,18 +373,40 @@ def pdm_other_prepare_weights(nets):
     return weights
 
 
-def compute_iterative_pdm_matching(models, train_dl, test_dl, cls_freqs, n_classes, sigma, sigma0, gamma, it, old_assignment=None):
+def build_init(hungarian_weights, assignments, j):
+    batch_init = []
+    C = len(assignments)
+    if len(hungarian_weights) == 4:
+        batch_init.append(hungarian_weights[0][:, assignments[0][j]])
+        batch_init.append(hungarian_weights[1][assignments[0][j]])
+        batch_init.append(hungarian_weights[2][assignments[0][j]])
+        batch_init.append(hungarian_weights[3])
+        return batch_init
+    for c in range(C):
+        if c == 0:
+            batch_init.append(hungarian_weights[c][:, assignments[c][j]])
+            batch_init.append(hungarian_weights[c + 1][assignments[c][j]])
+        else:
+            batch_init.append(hungarian_weights[2 * c][assignments[c - 1][j]][:, assignments[c][j]])
+            batch_init.append(hungarian_weights[2 * c + 1][assignments[c][j]])
+            if c == C - 1:
+                batch_init.append(hungarian_weights[2 * c + 2][assignments[c][j]])
+                batch_init.append(hungarian_weights[-1])
+                return batch_init
 
-    batch_weights = pdm_other_prepare_weights(models)
+
+def compute_iterative_pdm_matching(nets,models, train_dl, test_dl, cls_freqs, n_classes, sigma, sigma0, gamma, it, old_assignment=None):
+
+    batch_weights = pdm_other_prepare_weights(nets)
     batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
 
     hungarian_weights, assignments = pdm_multilayer_group_descent(
         batch_weights, batch_freqs, sigma_layers=sigma, sigma0_layers=sigma0, gamma_layers=gamma, it=it, assignments_old=old_assignment
     )
 
-    train_acc, test_acc, conf_matrix_train, conf_matrix_test, _ = compute_pdm_net_accuracy(hungarian_weights, train_dl, test_dl, n_classes)
+    train_acc, test_acc, conf_matrix_train, conf_matrix_test, _ = compute_pdm_net_accuracy(hungarian_weights, train_dl, test_dl, n_classes,cls_freqs)
 
-    batch_weights_new = [pdm_build_init(hungarian_weights, assignments, j) for j in range(len(models))]
+    batch_weights_new = [build_init(hungarian_weights, assignments, j) for j in range(len(models))]
     matched_net_shapes = list(map(lambda x: x.shape, hungarian_weights))
 
     return batch_weights_new, train_acc, test_acc, matched_net_shapes, assignments, hungarian_weights, conf_matrix_train, conf_matrix_test
@@ -415,6 +497,8 @@ def normalize_weights(weights):
     return weights_norm
 
 """ToDo :  Check the prediction which is 0 but it added to correct predictions"""
+
+
 def get_weighted_average_pred(models: list, weights: dict, images,labels,optimizer, args=args_parser()):
     out_weighted = None
     criterion = torch.nn.NLLLoss()
@@ -448,7 +532,35 @@ def get_weighted_average_pred(models: list, weights: dict, images,labels,optimiz
 
     return out_weighted
 
+
+def compute_accuracy(model, dataloader, get_confusion_matrix=False):
+    was_training = False
+    if model.training:
+        model.eval()
+        was_training = True
+
+    true_labels_list, pred_labels_list = np.array([]), np.array([])
+    correct, total = 0, 0
+    with torch.no_grad():
+        for batch_idx, (x, target) in enumerate(dataloader):
+            out = model(x)
+            _, pred_label = torch.max(out.data, 1)
+            total += x.data.size()[0]
+            correct += (pred_label == target.data).sum().item()
+
+            pred_labels_list = np.append(pred_labels_list, pred_label.numpy())
+            true_labels_list = np.append(true_labels_list, target.data.numpy())
+    if get_confusion_matrix:
+        conf_matrix = confusion_matrix(true_labels_list, pred_labels_list)
+    if was_training:
+        model.train()
+    if get_confusion_matrix:
+        return correct/float(total), conf_matrix
+    return correct/float(total)
+
 #add dict_user instead of dataloader
+
+
 def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_counts=None, uniform_weights=False, sanity_weights=False, args = args_parser()):
 
     dict_user= get_user_groups(args)
@@ -505,6 +617,7 @@ def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_cou
 
     return correct / float(total), conf_matrix
 
+
 def init_nets(input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim, n_nets,args=args_parser()):
 
 	input_size = args.net_config[0]
@@ -529,7 +642,7 @@ def load_new_state(nets, new_weights):
 
 		# Load weight into the network
 		i = 0
-		layer_i = 0
+		layer_i = 1
 
 		while i < len(weights):
 			weight = weights[i]
@@ -537,8 +650,8 @@ def load_new_state(nets, new_weights):
 			bias = weights[i]
 			i += 1
 
-			statedict['layers.%d.weight' % layer_i] = torch.from_numpy(weight.T)
-			statedict['layers.%d.bias' % layer_i] = torch.from_numpy(bias)
+			statedict['fc%d.weight' % layer_i] = torch.from_numpy(weight.T)
+			statedict['fc%d.bias' % layer_i] = torch.from_numpy(bias)
 			layer_i += 1
 
 		net.load_state_dict(statedict)
@@ -546,7 +659,7 @@ def load_new_state(nets, new_weights):
 	return nets
 
 
-def compute_pdm_net_accuracy(weights, train_dl, test_dl, n_classes,cls_freqs,n_nets,args=args_parser()):
+def compute_pdm_net_accuracy(weights, train_dl, test_dl, n_classes,cls_freqs,args=args_parser()):
 
     dims = []
     x = np.array(weights[0])
@@ -563,10 +676,10 @@ def compute_pdm_net_accuracy(weights, train_dl, test_dl, n_classes,cls_freqs,n_n
     #num_filters = [weights[0].shape[0], weights[2].shape[0]]
     #print("num filter",num_filters)
     kernel_size = 5
-    n_nets=args.n_nets
+    n_nets = int(args.num_users * args.frac)
     nets = {net_i: None for net_i in range(n_nets)}
     for net_i in range(n_nets):
-        pdm_net=CNNContainer(input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim)
+        pdm_net = CNNContainer(input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim)
         #pdm_net = FcNet(input_dim, hidden_dims, output_dim)
         statedict = pdm_net.state_dict()
 
@@ -587,25 +700,26 @@ def compute_pdm_net_accuracy(weights, train_dl, test_dl, n_classes,cls_freqs,n_n
 
         pdm_net.load_state_dict(statedict)
         nets[net_i] = pdm_net
-    print("nets", nets)
+    #print("nets", nets)
     nets_list = list(nets.values())
 
-    train_acc, conf_matrix_train = compute_ensemble_accuracy(nets_list, train_dl, n_classes,train_cls_counts=cls_freqs ,uniform_weights=True,sanity_weights=False)
+    train_acc, conf_matrix_train = compute_ensemble_accuracy(nets_list, train_dl, n_classes,train_cls_counts=cls_freqs,
+                                                             uniform_weights=True,sanity_weights=False)
     test_acc, conf_matrix_test = compute_ensemble_accuracy(nets_list, test_dl, n_classes,train_cls_counts=cls_freqs, uniform_weights=True,sanity_weights=False)
 
     return train_acc, test_acc, conf_matrix_train, conf_matrix_test,nets
 
 
 def train_net(net_id, net, train_dataloader, test_dataloader, epochs, args=args_parser()):
-    logging.debug('Training network %s' % str(net_id))
-    logging.debug('n_training: %d' % len(train_dataloader))
-    logging.debug('n_test: %d' % len(test_dataloader))
+    print('Training network %s' % str(net_id))
+    print('n_training: %d' % len(train_dataloader))
+    print('n_test: %d' % len(test_dataloader))
 
-    train_acc,_ = compute_ensemble_accuracy(net, train_dataloader,args.num_classes)
-    test_acc, conf_matrix = compute_ensemble_accuracy(net, test_dataloader, args.num_classes)
+    train_acc = compute_accuracy(net, train_dataloader)
+    test_acc, conf_matrix = compute_accuracy(net, test_dataloader, get_confusion_matrix=True)
 
-    logging.debug('>> Pre-Training Training accuracy: %f' % train_acc)
-    logging.debug('>> Pre-Training Test accuracy: %f' % test_acc)
+    print('>> Pre-Training Training accuracy: %.3f' % train_acc)
+    print('>> Pre-Training Test accuracy: %.3f' % test_acc)
 
     optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, net.parameters()), lr=args.lr,
                                 momentum=args.momentum, weight_decay=args.weight_decay)
@@ -617,9 +731,6 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, args=args_
 
     for epoch in range(epochs):
         for batch_idx, (x, target) in enumerate(train_dataloader):
-
-
-
             optimizer.zero_grad()
             x.requires_grad = True
             target.requires_grad = False
@@ -658,14 +769,14 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, args=args_
             losses.append(loss.item())
 
         #logging.debug('Epoch: %d Loss: %f L2 loss: %f' % (epoch, loss.item(), reg * l2_reg))
-        logging.debug('Epoch: %d Loss: %f ' % (epoch, loss.item()))
+        print('Epoch: %d Loss: %f ' % (epoch, loss.item()))
 
     train_acc = compute_accuracy(net, train_dataloader)
     test_acc, conf_matrix = compute_accuracy(net, test_dataloader, get_confusion_matrix=True)
 
-    logging.debug('>> Training accuracy: %f' % train_acc)
-    logging.debug('>> Test accuracy: %f' % test_acc)
+    print('>> Training accuracy: %.4f' % train_acc)
+    print('>> Test accuracy: %.4f' % test_acc)
 
-    logging.debug(' ** Training complete **')
+    print(' ** Training complete **')
 
     return train_acc, test_acc
