@@ -242,16 +242,6 @@ if __name__ == '__main__':
                 #print('Sigma0: %s. Sigma: %s. Shapes: %s, Accuracy: %f' %(
                     #str(sigma0), str(sigma), str(res[key]['shapes']), test_acc))
 
-                if train_acc > best_train_acc:
-                    best_test_acc = test_acc
-                    best_train_acc = train_acc
-                    best_weights = hungarian_weights
-                    best_sigma = sigma
-                    best_gamma = gamma
-                    best_sigma0 = sigma0
-                print("Based on train")
-                print('Best sigma0: %f, Best sigma: %f, Best Gamma: %f, Best accuracy (Test): %f. Training acc: %f' % (
-                    best_sigma0, best_sigma, best_gamma, best_test_acc, best_train_acc))
                 if test_acc > best_test_acc:
                     best_test_acc = test_acc
                     best_train_acc = train_acc
@@ -269,9 +259,9 @@ if __name__ == '__main__':
         """sigma0s = [1.0]
         sigmas = [1.0]
         gammas = [1.0]"""
-        gammas = [1.0, 1e-3, 50.0]
-        sigmas = [1.0, 0.1, 0.5]
-        sigma0s = [1.0, 10.0]
+        gammas = list(best_gamma)
+        sigmas = list(best_sigma)
+        sigma0s = list(best_sigma0)
         for (sigma0, sigma, gamma) in product(sigma0s, sigmas, gammas):
             logging.debug("Parameter setting: sigma0 = %f, sigma = %f, gamma = %f" % (sigma0, sigma, gamma))
 
@@ -322,8 +312,8 @@ if __name__ == '__main__':
                                args.local_ep, args.local_batch_size, args.iid, args.balanced, args.alpha)
 
                     with open(file_name, "a") as f:
-                        f.write(str(comm_round)+" "+str(expepochs)+" "+str(n_nets)+" "+str(train_acc_train_net)+" " +
-                                str(test_acc_train_net)+" \n")
+                        f.write(str(gamma)+","+str(sigma)+","+str(sigma0)+","+str(comm_round)+","+str(expepochs)+
+                                ","+str(n_nets)+","+str(train_acc_train_net)+"," +str(test_acc_train_net)+" \n")
 
                     print('\n Total Run Time: {0:0.4f}'.format(time.time() - start_time))
 
