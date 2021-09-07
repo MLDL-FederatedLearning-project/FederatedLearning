@@ -117,8 +117,8 @@ def get_test_loader(args,
     """
 
     normalize = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225],
+        mean=[0.4914, 0.4822, 0.4465],
+        std=[0.2023, 0.1994, 0.2010],
     )
 
     # define transform
@@ -180,7 +180,7 @@ def get_user_groups(args):
         server_labels, user_groups, traindata_cls_counts = non_iid_balanced(args, server_id, server_labels)
 
     if args.iid == 0 and args.balanced == 0:
-        server_labels, user_groups, traindata_cls_counts = non_iid_unbalanced(args,server_id, server_labels)
+        erver_labels, user_groups, traindata_cls_counts = non_iid_unbalanced(args,server_id, server_labels)
 
     if args.iid == 1 and args.balanced == 1:
         server_labels, user_groups, traindata_cls_counts = iid_balanced(args,server_id, server_labels)
@@ -189,7 +189,8 @@ def get_user_groups(args):
         server_labels, user_groups, traindata_cls_counts = iid_unbalanced(args, server_id, server_labels)
     # if you need only the user_groups, then you should write _, user_groups, _ = get_user_groups(args)
     return server_labels, user_groups, traindata_cls_counts
-def get_user_groups_alpha(args):
+
+def get_user_groups_alpha(args, server_labels):
     train_dataset,_ = get_dataset(args)
     users = np.arange(0,args.num_users)
     server_data, server_labels, server_id = get_server(train_dataset)
@@ -220,17 +221,46 @@ def get_user_groups_alpha(args):
     dict_users={}
     for j in range(args.num_users):
         np.random.shuffle(idx_batch[j])
-        dict_users[j] = idx_batch[j]
+        dict_users[j] = np.array(idx_batch[j])
+    counting = {}
+    net_cls_counts = {}
+    for i, dataidx in dict_users.items():
+        counting = {}
+        for each in dataidx:
+            if server_labels[each] in counting:
+                x = int(counting[server_labels[each]])
+                counting[server_labels[each]] = x + 1
+            else:
+                counting[server_labels[each]] = 1
+        sortedDict = dict(sorted(counting.items(), key=lambda x: x[0]))
+        net_cls_counts[i] = sortedDict
+
         #print(len(dict_users[j]), len(idx_batch[j]))
 
-    return dict_users
+    return server_labels, dict_users, net_cls_counts
+
+
 '''
 args=args_parser()
 train_dataset, _= get_dataset(args)
 server_data, server_labels, server_id= get_server(train_dataset)
-
-server_labels, dict_users, traindata_cls_counts = iid_balanced(args,server_id, server_labels)
-#cls_counts=record_net_data_stats(server_labels, user_groups)
-print(dict_users)
+#server_labels, user_groups, traindata_cls_counts = non_iid_balanced(args, server_id, server_labels)
+server_labels, user_groups, traindata_cls_counts = get_user_groups_alpha(args, server_labels)
 print(traindata_cls_counts)
 '''
+
+
+
+#print(list0)
+#print(net_cls_counts)
+#dict_users = cifar_noniid(train_dataset, args.num_users)
+#print(dict_users)
+#nets_cls_counts = record_net_data_stats(np.array(server_labels), dict_users)
+#print(nets_cls_counts)
+
+#server_labels, dict_users, traindata_cls_counts = non_iid_unbalanced(args,server_id, server_labels)
+#cls_counts=record_net_data_stats(server_labels, user_groups)
+#print(dict_users)
+#print(traindata_cls_counts)
+#user_groups = get_user_groups_alpha(args, server_labels)
+
