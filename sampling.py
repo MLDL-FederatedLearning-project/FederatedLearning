@@ -79,8 +79,22 @@ def non_iid_unbalanced(args,server_id, server_labels):
     for user in users:
       dict_users[user] = np.array(np.random.choice(all_idxs, num_items_unbalanced[user], replace=False))
       all_idxs = list(set(all_idxs) - set(dict_users[user]))
-    traindata_cls_counts = record_net_data_stats(np.array(server_labels), dict_users)
-    return server_labels, dict_users, traindata_cls_counts
+    counting = {}
+    net_cls_counts = {}
+    for i, dataidx in dict_users.items():
+        counting = {}
+        for each in dataidx:
+            if server_labels[each] in counting:
+                x = int(counting[server_labels[each]])
+                counting[server_labels[each]] = x + 1
+            else:
+                counting[server_labels[each]] = 1
+        sortedDict = dict(sorted(counting.items(), key=lambda x: x[0]))
+        net_cls_counts[i] = sortedDict
+    #traindata_cls_counts = record_net_data_stats(np.array(server_labels), dict_users)
+    #return server_labels, dict_users, traindata_cls_counts
+    return server_labels, dict_users, net_cls_counts
+
 
 def non_iid_balanced(args,server_id, server_labels):
     num_users = args.num_users
@@ -88,18 +102,30 @@ def non_iid_balanced(args,server_id, server_labels):
     num_items_balanced = int(len(server_id)/num_users) # it respresents the number of images each user has for the balanced split of the dataset; each user has the same number of images
     dict_users = {}
     labels = np.arange(0, args.num_classes)
-    nets_cls_counts = collections.defaultdict(dict)
+    #nets_cls_counts = collections.defaultdict(dict)
     all_idxs = [i for i in range(len(server_id))]
     list_labels=[]
     for user in users:
-        for label in labels:
-           dict_users[user] = set(np.random.choice(all_idxs, num_items_balanced, replace=False))
-           for i in dict_users[user]:
-               list_labels.append(server_labels[i])
-           all_idxs = list(set(all_idxs) - dict_users[user])
-           nets_cls_counts[user][label]= list(list_labels).count(label)
+           dict_users[user] = np.array(np.random.choice(all_idxs, num_items_balanced, replace=False))
+           all_idxs = list(set(all_idxs) - set(dict_users[user]))
+           #for label in labels:
+             #for i in dict_users[user]:
+               #list_labels.append(server_labels[i])
+    counting = {}
+    net_cls_counts = {}
+    for i, dataidx in dict_users.items():
+       counting = {}
+       for each in dataidx:
+           if server_labels[each] in counting:
+               x = int(counting[server_labels[each]])
+               counting[server_labels[each]] = x + 1
+           else:
+               counting[server_labels[each]] = 1
+       sortedDict = dict(sorted(counting.items(), key=lambda x: x[0]))
+       net_cls_counts[i] = sortedDict
+               #nets_cls_counts[user][label]= list(list_labels).count(label)
 
-    return server_labels, dict_users, nets_cls_counts
+    return server_labels, dict_users, net_cls_counts
 
 
 
