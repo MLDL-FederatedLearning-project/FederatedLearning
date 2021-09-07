@@ -260,9 +260,9 @@ if __name__ == '__main__':
         """sigma0s = [1.0]
         sigmas = [1.0]
         gammas = [1.0]"""
-        gammas = best_gamma
-        sigmas = best_sigma
-        sigma0s = best_sigma0
+        gamma = best_gamma
+        sigma = best_sigma
+        sigma0 = best_sigma0
         """for (sigma0, sigma, gamma) in product(sigma0s, sigmas, gammas):"""
         logging.debug("Parameter setting: sigma0 = %f, sigma = %f, gamma = %f" % (sigma0, sigma, gamma))
 
