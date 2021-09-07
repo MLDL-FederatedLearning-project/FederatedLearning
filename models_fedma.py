@@ -555,8 +555,8 @@ def compute_accuracy(model, dataloader, get_confusion_matrix=False):
     if was_training:
         model.train()
     if get_confusion_matrix:
-        return correct/float(total), conf_matrix
-    return correct/float(total)
+        return correct,float(total), conf_matrix
+    return correct,float(total)
 
 #add dict_user instead of dataloader
 
@@ -715,9 +715,10 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, args=args_
     print('n_training: %d' % len(train_dataloader))
     print('n_test: %d' % len(test_dataloader))
 
-    train_acc = compute_accuracy(net, train_dataloader)
-    test_acc, conf_matrix = compute_accuracy(net, test_dataloader, get_confusion_matrix=True)
-
+    train_correct, train_total = compute_accuracy(net, train_dataloader)
+    test_correct, test_total, conf_matrix = compute_accuracy(net, test_dataloader, get_confusion_matrix=True)
+    train_acc = train_correct/train_total
+    test_acc = test_correct/test_total
     print('>> Pre-Training Training accuracy: %.3f' % train_acc)
     print('>> Pre-Training Test accuracy: %.3f' % test_acc)
 
@@ -771,12 +772,12 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, args=args_
         #logging.debug('Epoch: %d Loss: %f L2 loss: %f' % (epoch, loss.item(), reg * l2_reg))
         print('Epoch: %d Loss: %f ' % (epoch, loss.item()))
 
-    train_acc = compute_accuracy(net, train_dataloader)
-    test_acc, conf_matrix = compute_accuracy(net, test_dataloader, get_confusion_matrix=True)
+    train_correct, train_total = compute_accuracy(net, train_dataloader)
+    test_correct, test_total , conf_matrix = compute_accuracy(net, test_dataloader, get_confusion_matrix=True)
 
     print('>> Training accuracy: %.4f' % train_acc)
     print('>> Test accuracy: %.4f' % test_acc)
 
     print(' ** Training complete **')
 
-    return train_acc, test_acc
+    return train_correct, train_total, test_correct, test_total

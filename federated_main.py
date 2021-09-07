@@ -192,6 +192,7 @@ if __name__ == '__main__':
         gammas = [1.0, 1e-3, 50.0]
         sigmas = [1.0, 0.1, 0.5]
         sigma0s = [1.0, 10.0]
+
         """sigma0s = [1.0]
         sigmas = [1.0]
         gammas = [1.0]"""
@@ -259,63 +260,72 @@ if __name__ == '__main__':
         """sigma0s = [1.0]
         sigmas = [1.0]
         gammas = [1.0]"""
-        gammas = list(best_gamma)
-        sigmas = list(best_sigma)
-        sigma0s = list(best_sigma0)
-        for (sigma0, sigma, gamma) in product(sigma0s, sigmas, gammas):
-            logging.debug("Parameter setting: sigma0 = %f, sigma = %f, gamma = %f" % (sigma0, sigma, gamma))
+        gammas = best_gamma
+        sigmas = best_sigma
+        sigma0s = best_sigma0
+        """for (sigma0, sigma, gamma) in product(sigma0s, sigmas, gammas):"""
+        logging.debug("Parameter setting: sigma0 = %f, sigma = %f, gamma = %f" % (sigma0, sigma, gamma))
 
-            iter_nets = copy.deepcopy(nets)
-            assignment = None
+        iter_nets = copy.deepcopy(nets)
+        assignment = None
+        file_name = args.data_dir + '/global_rounds/{}_{}_{}_{}_{}_{}_{}_{}_alpha{}.txt'. \
+            format(args.dataset, args.model, args.num_users, args.frac,
+                   args.local_ep, args.local_batch_size, args.iid, args.balanced, args.alpha)
+        with open(file_name, "w") as f:
+            f.write("gamma" + "," + "sigma" + "," + "sigma0" + "," + "comm_round" + "," + "expepochs"
+                    "," + "n_nets" + "," + "train_acc_train_net"+ "," + "test_acc_train_net" + " \n")
+        # Run for communication rounds iterations
+        for i, comm_round in enumerate(range(args.communication_rounds)):
+            print(f'\n | Global Training Round : {comm_round + 1} |\n')
 
-            # Run for communication rounds iterations
-            for i, comm_round in enumerate(range(args.communication_rounds)):
-                print(f'\n | Global Training Round : {comm_round + 1} |\n')
+            it = 3
 
-                it = 3
+            iter_nets_list = list(iter_nets.values())
 
-                iter_nets_list = list(iter_nets.values())
+            net_weights_new, train_acc, test_acc, new_shape, assignment, hungarian_weights, \
+            conf_matrix_train, conf_matrix_test = compute_iterative_pdm_matching(nets,
+                iter_nets_list, train_dataset, test_dataset, cls_count, args.net_config[-1],
+                sigma, sigma0, gamma, it, old_assignment=assignment
+            )
 
-                net_weights_new, train_acc, test_acc, new_shape, assignment, hungarian_weights, \
-                conf_matrix_train, conf_matrix_test = compute_iterative_pdm_matching(nets,
-                    iter_nets_list, train_dataset, test_dataset, cls_count, args.net_config[-1],
-                    sigma, sigma0, gamma, it, old_assignment=assignment
-                )
+            print("Communication: %d, Train acc: %f, Test acc: %f, Shapes: %s" % (
+            comm_round, train_acc, test_acc, str(new_shape)))
+            print('CENTRAL MODEL CONFUSION MATRIX')
+            print('Train data confusion matrix: \n %s' % str(conf_matrix_train))
+            print('Test data confusion matrix: \n %s' % str(conf_matrix_test))
 
-                print("Communication: %d, Train acc: %f, Test acc: %f, Shapes: %s" % (
-                comm_round, train_acc, test_acc, str(new_shape)))
-                print('CENTRAL MODEL CONFUSION MATRIX')
-                print('Train data confusion matrix: \n %s' % str(conf_matrix_train))
-                print('Test data confusion matrix: \n %s' % str(conf_matrix_test))
+            iter_nets = load_new_state(iter_nets, net_weights_new)
 
-                iter_nets = load_new_state(iter_nets, net_weights_new)
+            expepochs = args.local_ep
+            train_correct_sum, train_total_sum, test_correct_sum, test_total_sum=0,0,0,0
+            # Train these networks again
+            for net_id, net in iter_nets.items():
+                dataidxs = list(user_groups[net_id])
+                idxs_train = list(dataidxs[:int(0.8 * len(dataidxs))])
+                idxs_test = list(dataidxs[int(0.8 * len(dataidxs)):])
+                print("Training network %s. n_training: %d" % (str(net_id), len(dataidxs)))
+                train_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_train),
+                                                            batch_size=args.local_batch_size, shuffle=True,
+                                                            drop_last=False)
+                # maybe add num_workers
+                test_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_test),
+                                                           batch_size=args.local_batch_size, shuffle=False)
+                #net_train_dl, net_test_dl = get_dataloader(args.dataset, args.datadir, 32, 32, dataidxs)
+                train_correct_train_net,train_total_train_net,test_correct_train_net,test_total_train_net = train_net(net_id, net, train_dataset, test_dataset, expepochs, args)
+                train_correct_sum += train_correct_train_net
+                train_total_sum += train_total_train_net
+                test_correct_sum += test_correct_train_net
+                test_total_sum += test_total_train_net
+            file_name = args.data_dir + '/global_rounds/{}_{}_{}_{}_{}_{}_{}_{}_alpha{}.txt'. \
+                format(args.dataset, args.model, args.num_users, args.frac,
+                       args.local_ep, args.local_batch_size, args.iid, args.balanced, args.alpha)
+            train_acc_train_net = train_correct_sum/train_total_sum
+            test_acc_train_net = test_correct_sum/test_total_sum
+            with open(file_name, "a") as f:
+                    f.write(str(gamma)+","+str(sigma)+","+str(sigma0)+","+str(comm_round)+","+str(expepochs)+
+                            ","+str(n_nets)+","+str(train_acc_train_net)+"," +str(test_acc_train_net)+" \n")
 
-                expepochs = args.local_ep
-
-                # Train these networks again
-                for net_id, net in iter_nets.items():
-                    dataidxs = list(user_groups[net_id])
-                    idxs_train = list(dataidxs[:int(0.8 * len(dataidxs))])
-                    idxs_test = list(dataidxs[int(0.8 * len(dataidxs)):])
-                    print("Training network %s. n_training: %d" % (str(net_id), len(dataidxs)))
-                    train_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_train),
-                                                                batch_size=args.local_batch_size, shuffle=True,
-                                                                drop_last=False)
-                    # maybe add num_workers
-                    test_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_test),
-                                                               batch_size=args.local_batch_size, shuffle=False)
-                    #net_train_dl, net_test_dl = get_dataloader(args.dataset, args.datadir, 32, 32, dataidxs)
-                    train_acc_train_net, test_acc_train_net = train_net(net_id, net, train_dataset, test_dataset, expepochs, args)
-
-                    file_name = args.data_dir + '/global_rounds/{}_{}_{}_{}_{}_{}_{}_{}_{}_alpha{}.txt'. \
-                        format(args.dataset, args.model, args.communication_rounds, args.num_users, args.frac,
-                               args.local_ep, args.local_batch_size, args.iid, args.balanced, args.alpha)
-
-                    with open(file_name, "a") as f:
-                        f.write(str(gamma)+","+str(sigma)+","+str(sigma0)+","+str(comm_round)+","+str(expepochs)+
-                                ","+str(n_nets)+","+str(train_acc_train_net)+"," +str(test_acc_train_net)+" \n")
-
-                    print('\n Total Run Time: {0:0.4f}'.format(time.time() - start_time))
+            print('\n Total Run Time: {0:0.4f}'.format(time.time() - start_time))
 
 
     else:
