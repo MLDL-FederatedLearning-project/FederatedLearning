@@ -149,8 +149,8 @@ def get_dataset(args):
         std=[0.2023, 0.1994, 0.2010],
     )
     normalize_test = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225],
+        mean=[0.4914, 0.4822, 0.4465],
+        std=[0.2023, 0.1994, 0.2010],
     )
     train_transform = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -190,8 +190,9 @@ def get_user_groups(args):
     # if you need only the user_groups, then you should write _, user_groups, _ = get_user_groups(args)
     return server_labels, user_groups, traindata_cls_counts
 
-def get_user_groups_alpha(args, server_labels):
+def get_user_groups_alpha(args):
     train_dataset,_ = get_dataset(args)
+    server_data, server_labels, server_id = get_server(train_dataset)
     users = np.arange(0,args.num_users)
     server_data, server_labels, server_id = get_server(train_dataset)
     num_items_balanced = int(len(server_id)/args.num_users)
@@ -263,4 +264,3 @@ print(traindata_cls_counts)
 #print(dict_users)
 #print(traindata_cls_counts)
 #user_groups = get_user_groups_alpha(args, server_labels)
-
