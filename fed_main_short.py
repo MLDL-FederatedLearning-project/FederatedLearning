@@ -9,7 +9,7 @@ import pickle
 import numpy as np
 from tqdm import tqdm
 import random
-import numpy
+
 import torch
 from tensorboardX import SummaryWriter
 
@@ -189,92 +189,19 @@ if __name__ == '__main__':
         #print("CLS freq",cls_freqs)
         batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
         #print("batch frequencies", batch_freqs)
-        gammas = [1.0, 1e-3, 50.0]
-        sigmas = [1.0, 0.1, 0.5]
-        sigma0s = [1.0, 10.0]
-
-        """sigma0s = [1.0]
-        sigmas = [1.0]
-        gammas = [1.0]"""
+        gamma = 1.0
+        sigma = 1.0
+        sigma0 = 1.0
         best_test_acc, best_train_acc, best_weights, best_sigma, best_gamma, best_sigma0 = -1, -1, None, -1, -1, -1
-        for gamma, sigma, sigma0 in product(gammas, sigmas, sigma0s):
-            print("Gamma: ", gamma, "Sigma: ", sigma, "Sigma0: ", sigma0)
-            hungarian_weights , assignment = pdm_multilayer_group_descent(
-                batch_weights, sigma0_layers=sigma0, sigma_layers=sigma, batch_frequencies=batch_freqs, it=0,
-                gamma_layers=gamma
-            )
-            #print("hungarian weights",hungarian_weights)
-            with open(args.data_dir+"\hungarian_weights\hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".txt", "w") as output:
-                output.write(str(hungarian_weights))
+        hungarian_weights=pickle.load(open(args.data_dir+"\hungarian_weights\hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".pkl",'rb'))
 
-            pickle.dump(hungarian_weights, open(args.data_dir+"\hungarian_weights\hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".pkl","wb"))
-            hungarian_weights=pickle.load(open(args.data_dir+"\hungarian_weights\hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".pkl",'rb'))
-            print("hungarian_weights",hungarian_weights)
-            #train_dataset, test_dataset = get_dataset(args)
+        tr_dataset, _ = get_dataset(args)
 
-            for idx in idxs_users:
-                idxs = (list(user_groups[idx]))
-                idxs_train = list(idxs[:int(0.8 * len(idxs))])
-                idxs_test = list(idxs[int(0.8 * len(idxs)):])
-                print("indexes",idx,"test",len(idxs_test),"train",len(idxs_train))
-
-                tr_dataset, _ = get_dataset(args)
-
-                train_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_train),
-                                         batch_size=args.local_batch_size, shuffle=True, drop_last=False)
-                # maybe add num_workers
-                test_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_test),
-                                        batch_size=args.local_batch_size, shuffle=False)
-                '''
-                train_dataset, validloader = get_train_valid_loader(args,
-                                                                  valid_size=0.2,
-                                                                  shuffle=True,
-                                                                  pin_memory=False)
-                test_dataset = get_test_loader(args,
-                                             shuffle=True,
-                                             pin_memory=False)'''
-                train_acc, test_acc, _, _,nets = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes,cls_freqs)
-                pickle.dump(nets, open(
-                    args.data_dir + "\hungarian_weights\saved_nets_" + str(gamma) + "_" + str(sigma) + "_" + str(
-                        sigma0) + ".pkl", "wb"))
-
-                print("reached here")
-                res = {}
-                key = (sigma0, sigma, gamma)
-                res[key] = {}
-                """for k in key:
-                we should discuss about it later on
-                """
-                res[key]['shapes'] = list(map(lambda x: x.shape, hungarian_weights))
-                res[key]['train_accuracy'] = train_acc
-                res[key]['test_accuracy'] = test_acc
-
-                #print('Sigma0: %s. Sigma: %s. Shapes: %s, Accuracy: %f' %(
-                    #str(sigma0), str(sigma), str(res[key]['shapes']), test_acc))
-
-                if test_acc > best_test_acc:
-                    best_test_acc = test_acc
-                    best_train_acc = train_acc
-                    best_weights = hungarian_weights
-                    best_sigma = sigma
-                    best_gamma = gamma
-                    best_sigma0 = sigma0
-                print("Based on test")
-                print('Best sigma0: %f, Best sigma: %f, Best Gamma: %f, Best accuracy (Test): %f. Training acc: %f' % (
-                    best_sigma0, best_sigma, best_gamma, best_test_acc, best_train_acc))
+        nets = pickle.load(open(
+            args.data_dir + "\hungarian_weights\saved_nets_" + str(gamma) + "_" + str(sigma) + "_" + str(
+                sigma0) + ".pkl", 'rb'))
 
         print("Running Iterative PDM matching procedure")
-        logging.debug("Running Iterative PDM matching procedure")
-
-        """sigma0s = [1.0]
-        sigmas = [1.0]
-        gammas = [1.0]"""
-        gamma = best_gamma
-        sigma = best_sigma
-        sigma0 = best_sigma0
-        """for (sigma0, sigma, gamma) in product(sigma0s, sigmas, gammas):"""
-        logging.debug("Parameter setting: sigma0 = %f, sigma = %f, gamma = %f" % (sigma0, sigma, gamma))
-
         iter_nets = copy.deepcopy(nets)
         assignment = None
         file_name = args.data_dir + '/global_rounds/{}_{}_{}_{}_{}_{}_{}_{}_alpha{}.txt'. \
@@ -339,3 +266,5 @@ if __name__ == '__main__':
 
     else:
         print("you did not choose a correct communication type")
+
+
