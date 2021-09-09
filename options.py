@@ -11,7 +11,7 @@ def args_parser():
                         help="directory of the project")
     parser.add_argument('--centralized', type=int, default=1,
                         help="default value = 1 for the centralized model, for the federated put 0")
-    parser.add_argument('--epochs', type=int, default=0,
+    parser.add_argument('--epochs', type=int, default=50,
                         help="number of rounds of training")
     parser.add_argument('--communication_rounds', type=int, default=50,
                         help="number of communication rounds")
@@ -21,7 +21,7 @@ def args_parser():
                         help="number of users: K")
     parser.add_argument('--frac', type=float, default=0.1,
                         help='the fraction of clients: C')
-    parser.add_argument('--local_ep', type=int, default=10,
+    parser.add_argument('--local_ep', type=int, default=2,
                         help="the number of local epochs: E")
     parser.add_argument('--local_batch_size', type=int, default=64,
                         help="local batch size: B")
@@ -49,8 +49,10 @@ def args_parser():
     parser.add_argument('--max_pool', type=str, default='True',
                         help="Whether use max pooling rather than \
                         strided convolutions")
-    parser.add_argument('--alpha', type=int, default=0.95,
+    parser.add_argument('--alpha', type=int, default=0.05,
                         help="for personalization")
+    parser.add_argument('--alpha_use', type=str, default='False',
+                        help="put true if want to use alpha")
 
     # other arguments
     parser.add_argument('--dataset', type=str, default='cifar10', help="name \
@@ -63,7 +65,7 @@ def args_parser():
                         of optimizer")
     parser.add_argument('--iid', type=int, default=1,
                         help='Default set to iid=1. For non iid use 0')
-    parser.add_argument('--balanced', type=int, default=1,
+    parser.add_argument('--balanced', type=int, default=0,
                         help='Default set to balanced =1. For unbalanced set to 0')
     parser.add_argument('--stopping_rounds', type=int, default=10,
                         help='rounds of early stopping')
@@ -97,7 +99,7 @@ def args_parser():
                         help='whether to recalculating the matching process (this is for speeding up the debugging process)')
     parser.add_argument('--oneshot_matching', type=bool, default=False, metavar='OM',
                         help='if the code is going to conduct one shot matching')
-    parser.add_argument('--comm_type', type=str, default='fedma',
+    parser.add_argument('--comm_type', type=str, default='fedavg',
                         help='which type of communication strategy is going to be used: fedma/fedavg/...layerwise/blockwise')
     parser.add_argument('--comm_round', type=int, default=2,
                         help='how many round of communications we shoud use')

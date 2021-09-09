@@ -52,9 +52,12 @@ if __name__ == '__main__':
 
     # load dataset and user groups
     train_dataset, test_dataset = get_dataset(args)
-    #_,user_groups,cls_count = get_user_groups(args)
-    _,user_groups,cls_count=get_user_groups_alpha(args)
-    #_,user_groups=get_users_groups_alpha_balanced(args)
+    if args.alpha_use and args.balance == 0:
+        _,user_groups,cls_count=get_user_groups_alpha(args)
+    elif args.alpha_use and args.balance == 1:
+        _, user_groups = get_users_groups_alpha_balanced(args)
+    else:
+        _, user_groups, cls_count = get_user_groups(args)
     print("cls count",cls_count)
 
 
@@ -182,7 +185,7 @@ if __name__ == '__main__':
 
         plt.figure()
         plt.title('Average Test Accuracy vs Communication rounds')
-        plt.plot(range(len(test_accuracy)), test_accuracy, color='k')
+        plt.plot(range(len(test_accuracy)), test_acc, color='k')
         plt.ylabel('Average Accuracy')
         plt.xlabel('Communication Rounds')
         plt.savefig(dir_path + '/test_accuracy_federated_{}_{}_{}_{}_{}_{}_{}_{}_{}.png'.
