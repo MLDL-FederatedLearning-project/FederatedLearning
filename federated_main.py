@@ -54,7 +54,7 @@ if __name__ == '__main__':
     train_dataset, test_dataset = get_dataset(args)
     #_,user_groups,cls_count = get_user_groups(args)
     _,user_groups,cls_count=get_user_groups_alpha(args)
-    #_,user_groups=get_users_groups_alpha_balanced()
+    #_,user_groups=get_users_groups_alpha_balanced(args)
     print("cls count",cls_count)
 
 
