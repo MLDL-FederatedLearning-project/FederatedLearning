@@ -24,6 +24,7 @@ from models_fedma import pdm_multilayer_group_descent,compute_iterative_pdm_matc
 from itertools import product
 from dataset_split import get_train_valid_loader, get_test_loader,get_user_groups_alpha
 from update import DatasetSplit
+from csv_file_import import get_users_groups_alpha_balanced
 
 from sampling import random_number_images, non_iid_unbalanced, iid_unbalanced, non_iid_balanced, iid_unbalanced,get_server,iid_balanced
 
@@ -53,6 +54,7 @@ if __name__ == '__main__':
     train_dataset, test_dataset = get_dataset(args)
     #_,user_groups,cls_count = get_user_groups(args)
     _,user_groups,cls_count=get_user_groups_alpha(args)
+    #_,user_groups=get_users_groups_alpha_balanced()
     print("cls count",cls_count)
 
 
@@ -122,8 +124,16 @@ if __name__ == '__main__':
             print(f'Training Loss : {np.mean(np.array(train_loss))}')
             print('Train Accuracy: {:.2f}% \n'.format(train_accuracy[-1]))
 
-        # Test inference after completion of training
-        test_acc, test_loss = test_inference(args, global_model, test_dataset)
+            # Test inference after completion of training
+            test_acc, test_loss = test_inference(args, global_model, test_dataset)
+
+            file_name = args.data_dir + '/accuracy_federated_round{}_ep{}_bs{}_iid{}_b{}_alpha{}.txt'. \
+                format(args.communication_rounds, args.local_ep, args.local_batch_size, args.iid, args.balanced,
+                       args.alpha)
+            with open(file_name, "a") as f:
+                f.write(str(round) + "," + str(train_accuracy[-1]) + "," + str(test_acc) + " \n")
+
+
 
         print(f' \n Results after {args.communication_rounds} global rounds of training:')
         print("|---- Avg Train Accuracy: {:.2f}%".format(train_accuracy[-1]))
@@ -167,11 +177,7 @@ if __name__ == '__main__':
         plt.savefig(dir_path + '/accuracy_federated.png'.
                     format(args.dataset, args.model, args.communication_rounds, args.frac,
                            args.iid, args.local_ep, args.local_batch_size))
-        file_name = args.data_dir + '/accuracy_federated_round{}_ep{}_bs{}_iid{}_b{}_alpha{}.txt'. \
-            format(args.communication_rounds, args.local_ep, args.local_batch_size, args.iid, args.balanced, args.alpha)
-        with open(file_name, "a") as f:
-            f.write(str(comm_round) + "," + str(local_ep) +
-                    ","  + str(train_accuracy) + "," + str(test_accuracy) + " \n")
+
         # plt.show()
 
     elif args.comm_type == "fedma":
