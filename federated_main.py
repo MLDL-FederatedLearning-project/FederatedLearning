@@ -165,9 +165,9 @@ if __name__ == '__main__':
         plt.plot(range(len(train_loss)), train_loss, color='r')
         plt.ylabel('Training loss')
         plt.xlabel('Communication Rounds')
-        plt.savefig(dir_path + '/loss_federated_{}_{}_{}_{}_{}_{}_{}.png'.
+        plt.savefig(dir_path + '/loss_federated_{}_{}_{}_{}_{}_{}_{}_{}_{}.png'.
                     format(args.dataset, args.model, args.communication_rounds, args.frac,
-                           args.iid, args.local_ep, args.local_batch_size))
+                           args.iid,args.balanced,args.local_ep, args.local_batch_size,args.alpha))
         # plt.show()
 
         # # Plot Average Accuracy vs Communication rounds
@@ -176,18 +176,18 @@ if __name__ == '__main__':
         plt.plot(range(len(train_accuracy)), train_accuracy, color='k')
         plt.ylabel('Average Accuracy')
         plt.xlabel('Communication Rounds')
-        plt.savefig(dir_path + '/train_accuracy_federated_{}_{}_{}_{}_{}_{}_{}.png'.
+        plt.savefig(dir_path + '/train_accuracy_federated_{}_{}_{}_{}_{}_{}_{}_{}_{}.png'.
                     format(args.dataset, args.model, args.communication_rounds, args.frac,
-                           args.iid, args.local_ep, args.local_batch_size))
+                           args.iid,args.balanced,args.local_ep, args.local_batch_size, args.alpha))
 
         plt.figure()
         plt.title('Average Test Accuracy vs Communication rounds')
         plt.plot(range(len(test_accuracy)), test_acc, color='k')
         plt.ylabel('Average Accuracy')
         plt.xlabel('Communication Rounds')
-        plt.savefig(dir_path + '/test_accuracy_federated_{}_{}_{}_{}_{}_{}_{}.png'.
+        plt.savefig(dir_path + '/test_accuracy_federated_{}_{}_{}_{}_{}_{}_{}_{}_{}.png'.
                     format(args.dataset, args.model, args.communication_rounds, args.frac,
-                           args.iid, args.local_ep, args.local_batch_size))
+                           args.iid, args.balanced, args.local_ep, args.local_batch_size, args.alpha))
 
         # plt.show()
 
