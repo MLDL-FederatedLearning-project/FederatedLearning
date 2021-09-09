@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # Python version: 3.6
+
 import logging
 import os
 import copy
@@ -9,7 +10,7 @@ import pickle
 import numpy as np
 from tqdm import tqdm
 import random
-import numpy
+
 import torch
 from tensorboardX import SummaryWriter
 
@@ -50,9 +51,9 @@ if __name__ == '__main__':
 
     # load dataset and user groups
     train_dataset, test_dataset = get_dataset(args)
-    _,user_groups,cls_count = get_user_groups(args)
-    #user_groups=get_user_groups_alpha(args)
-    #print("user_groups",user_groups)
+    #_,user_groups,cls_count = get_user_groups(args)
+    _,user_groups,cls_count=get_user_groups_alpha(args)
+    print("cls count",cls_count)
 
 
     # BUILD MODEL
@@ -166,6 +167,11 @@ if __name__ == '__main__':
         plt.savefig(dir_path + '/accuracy_federated.png'.
                     format(args.dataset, args.model, args.communication_rounds, args.frac,
                            args.iid, args.local_ep, args.local_batch_size))
+        file_name = args.data_dir + '/accuracy_federated_round{}_ep{}_bs{}_iid{}_b{}_alpha{}.txt'. \
+            format(args.communication_rounds, args.local_ep, args.local_batch_size, args.iid, args.balanced, args.alpha)
+        with open(file_name, "a") as f:
+            f.write(str(comm_round) + "," + str(local_ep) +
+                    ","  + str(train_accuracy) + "," + str(test_accuracy) + " \n")
         # plt.show()
 
     elif args.comm_type == "fedma":
@@ -206,10 +212,6 @@ if __name__ == '__main__':
             #print("hungarian weights",hungarian_weights)
             with open(args.data_dir+"\hungarian_weights\hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".txt", "w") as output:
                 output.write(str(hungarian_weights))
-
-            pickle.dump(hungarian_weights, open(args.data_dir+"\hungarian_weights\hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".pkl","wb"))
-            hungarian_weights=pickle.load(open(args.data_dir+"\hungarian_weights\hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".pkl",'rb'))
-            print("hungarian_weights",hungarian_weights)
             #train_dataset, test_dataset = get_dataset(args)
 
             for idx in idxs_users:
@@ -234,11 +236,6 @@ if __name__ == '__main__':
                                              shuffle=True,
                                              pin_memory=False)'''
                 train_acc, test_acc, _, _,nets = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes,cls_freqs)
-                pickle.dump(nets, open(
-                    args.data_dir + "\hungarian_weights\saved_nets_" + str(gamma) + "_" + str(sigma) + "_" + str(
-                        sigma0) + ".pkl", "wb"))
-
-                print("reached here")
                 res = {}
                 key = (sigma0, sigma, gamma)
                 res[key] = {}
