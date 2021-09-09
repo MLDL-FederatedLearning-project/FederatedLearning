@@ -79,6 +79,7 @@ if __name__ == '__main__':
     cv_loss, cv_acc = [], []
     print_every = 1
     val_loss_pre, counter = 0, 0
+    test_accuracy=[]
 
 
 
@@ -126,12 +127,13 @@ if __name__ == '__main__':
 
             # Test inference after completion of training
             test_acc, test_loss = test_inference(args, global_model, test_dataset)
+            test_accuracy.append(test_acc)
 
             file_name = args.data_dir + '/accuracy_federated_round{}_ep{}_bs{}_iid{}_b{}_alpha{}.txt'. \
                 format(args.communication_rounds, args.local_ep, args.local_batch_size, args.iid, args.balanced,
                        args.alpha)
             with open(file_name, "a") as f:
-                f.write(str(round) + "," + str(train_accuracy[-1]) + "," + str(test_acc) + " \n")
+                f.write(str(round) + "," + str(train_accuracy[-1]) + "," + str(test_accuracy[-1]) + " \n")
 
 
 
@@ -163,18 +165,27 @@ if __name__ == '__main__':
         plt.plot(range(len(train_loss)), train_loss, color='r')
         plt.ylabel('Training loss')
         plt.xlabel('Communication Rounds')
-        plt.savefig(dir_path + '/loss_federated.png'.
+        plt.savefig(dir_path + '/loss_federated_{}_{}_{}_{}_{}_{}_{}.png'.
                     format(args.dataset, args.model, args.communication_rounds, args.frac,
                            args.iid, args.local_ep, args.local_batch_size))
         # plt.show()
 
         # # Plot Average Accuracy vs Communication rounds
         plt.figure()
-        plt.title('Average Accuracy vs Communication rounds')
+        plt.title('Average Train Accuracy vs Communication rounds')
         plt.plot(range(len(train_accuracy)), train_accuracy, color='k')
         plt.ylabel('Average Accuracy')
         plt.xlabel('Communication Rounds')
-        plt.savefig(dir_path + '/accuracy_federated.png'.
+        plt.savefig(dir_path + '/train_accuracy_federated_{}_{}_{}_{}_{}_{}_{}.png'.
+                    format(args.dataset, args.model, args.communication_rounds, args.frac,
+                           args.iid, args.local_ep, args.local_batch_size))
+
+        plt.figure()
+        plt.title('Average Test Accuracy vs Communication rounds')
+        plt.plot(range(len(test_accuracy)), test_acc, color='k')
+        plt.ylabel('Average Accuracy')
+        plt.xlabel('Communication Rounds')
+        plt.savefig(dir_path + '/test_accuracy_federated_{}_{}_{}_{}_{}_{}_{}.png'.
                     format(args.dataset, args.model, args.communication_rounds, args.frac,
                            args.iid, args.local_ep, args.local_batch_size))
 
