@@ -241,9 +241,7 @@ def pdm_multilayer_group_descent(batch_weights, batch_frequencies, sigma_layers,
                         assignments_old=None):
 
     n_layers = int(len(batch_weights[0]) / 2)
-    #print("batch weights", batch_weights, "len of that", len(batch_weights))
     J = len(batch_weights)
-    #print("batch weights",batch_weights)
     D = batch_weights[0][0].shape[0]
     K = batch_weights[0][-1].shape[0]
 
@@ -261,12 +259,9 @@ def pdm_multilayer_group_descent(batch_weights, batch_frequencies, sigma_layers,
     else:
         last_layer_const = []
         total_freq = sum(batch_frequencies)
-        #print("sum frequencies",total_freq)
         for f in batch_frequencies:
-            #print("f constant",f)
             result = np.divide(f, total_freq, where=total_freq != 0)
             last_layer_const.append(result)
-        #print("last layer",last_layer_const)
 
     sigma_bias_layers = sigma_layers
     sigma0_bias_layers = sigma0_layers
@@ -338,17 +333,6 @@ def pdm_multilayer_group_descent(batch_weights, batch_frequencies, sigma_layers,
     map_out = [g_w / g_s for g_w, g_s in zip(global_weights_out, global_inv_sigmas_out)]
 
     return map_out, assignment_all
-'''
-def record_net_data_stats(y_train, net_dataidx_map):
-    net_cls_counts = {}
-    for net_i, dataidx in net_dataidx_map.items():
-        unq, unq_cnt = np.unique(y_train, return_counts=True)
-        print("uniq",unq,"uniq_cnt", unq_cnt)
-        tmp = {unq[i]: unq_cnt[i] for i in range(len(unq))}
-        net_cls_counts[net_i] = tmp
-
-    return net_cls_counts
-'''
 
 
 def pdm_other_prepare_weights(nets):
@@ -423,8 +407,6 @@ def record_net_data_stats(y_train, net_dataidx_map):
             else:
                 counting[y_train[each]] = 1
         sortedDict = dict(sorted(counting.items(), key=lambda x: x[0]))
-        """print("counting",counting)
-        print("sorted dict",sortedDict)"""
         net_cls_counts[net_i] = sortedDict
 
     return net_cls_counts
@@ -441,15 +423,11 @@ def load_cifar10_data(datadir):
 def partition_data(train, test, n_nets, alpha=0.5):
     X_train, y_train, X_test, y_test = load_cifar10_data(train)
     n_train = X_train.shape[0]
-    #print("n train",n_train)
     idxs = np.random.permutation(n_train)
-    #print("indexes", idxs)
     batch_idxs = np.array_split(idxs, n_nets)
-    #print("batch index",batch_idxs)
     net_dataidx_map = {i: batch_idxs[i] for i in range(n_nets)}
     print("net data index", net_dataidx_map)
     traindata_cls_counts = record_net_data_stats(y_train, net_dataidx_map)
-    #print("train data cls count",traindata_cls_counts)
     return (X_train, y_train, X_test, y_test, net_dataidx_map, traindata_cls_counts)
 
 
@@ -480,7 +458,6 @@ def prepare_sanity_weights(n_classes, net_cnt):
 
 
 def normalize_weights(weights):
-    #print("weights come to normalization",weights)
     Z = np.array([])
     eps = 1e-3
     weights_norm = {}
@@ -490,13 +467,10 @@ def normalize_weights(weights):
             Z = weight.data.numpy()
         else:
             Z = Z + weight.data.numpy()
-    #print("z in normalize",Z)
     for mi, weight in weights.items():
         weights_norm[mi] = weight / torch.from_numpy(Z + eps)
-    #print("weights normalized",weights_norm)
-    return weights_norm
 
-"""ToDo :  Check the prediction which is 0 but it added to correct predictions"""
+    return weights_norm
 
 
 def get_weighted_average_pred(models: list, weights: dict, images,labels,optimizer, args=args_parser()):
@@ -504,27 +478,7 @@ def get_weighted_average_pred(models: list, weights: dict, images,labels,optimiz
     criterion = torch.nn.NLLLoss()
     # Compute the predictions
     for model_i, model in enumerate(models):
-        #print("model_i",model_i,"model",model)
-        #print("x value",x)
-        #print("x shape",x.shape)
-        #print("x",x)
-        #x = np.expand_dims(x, 1)  # if numpy array
-        #x = torch.unsqueeze(x,0)# if torch tensor
-        #images = images.expand([64, 3, 32, 32])
-        #optimizer.zero_grad()
-        #print("x",x)
-        #print("x shape",x.shape)
-        #print(model(images))
         out = F.log_softmax(model(images), dim=1)  # (N, C)
-        #print("out",out.shape)
-        #out = model(images)
-        #loss = criterion(out, labels)
-        #loss.backward()
-        #optimizer.step()
-        #out = model(x)  # (N, C)
-        #print("out", out.shape)
-        #print("output ", out)
-
         if out_weighted is None:
             out_weighted = (out * weights[model_i])
         else:
@@ -558,9 +512,6 @@ def compute_accuracy(model, dataloader, get_confusion_matrix=False):
         return correct,float(total), conf_matrix
     return correct,float(total)
 
-#add dict_user instead of dataloader
-
-
 def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_counts=None, uniform_weights=False, sanity_weights=False, args = args_parser()):
 
     dict_user= get_user_groups(args)
@@ -580,22 +531,12 @@ def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_cou
         weights_list = prepare_sanity_weights(n_classes, len(models))
     else:
         weights_list = prepare_weight_matrix(n_classes, train_cls_counts)
-    #print("weights list",weights_list)
     weights_norm = normalize_weights(weights_list)
-    #print("weights norm", weights_norm)
 
     with torch.no_grad():
-        #print("data loader",dataloader)
-        #NEED TO CHANGE BATCH_IDX in USERS
-        #dict_user: (user_id,images) need to add labels
-        #for user_id, (images, target) in dict_user:
         for batch_idx, (images, target) in enumerate(dataloader):
-            #print("images", images)
             target = target.long()
-            #print("models",models)
-            #print("weights norm",weights_norm)
             out = get_weighted_average_pred(models, weights_norm, images, target, optimizer)
-            #print("out",out)
             _, pred_label = torch.max(out, 1)
             pred_label = pred_label.view(-1)
             total += images.data.size()[0]
@@ -604,8 +545,6 @@ def compute_ensemble_accuracy(models: list, dataloader, n_classes, train_cls_cou
             true_labels_list = np.append(true_labels_list, target.data.numpy())
             print("correct", correct, "total", total, "batch index", batch_idx)
             print("pred label",pred_labels_list)
-            #print("true label list", true_labels_list)
-
 
     print(correct, total)
 
@@ -673,14 +612,11 @@ def compute_pdm_net_accuracy(weights, train_dl, test_dl, n_classes,cls_freqs,arg
     hidden_dims = dims[1:-1]
     input_channel = 3
     num_filters = 64
-    #num_filters = [weights[0].shape[0], weights[2].shape[0]]
-    #print("num filter",num_filters)
     kernel_size = 5
     n_nets = int(args.num_users * args.frac)
     nets = {net_i: None for net_i in range(n_nets)}
     for net_i in range(n_nets):
         pdm_net = CNNContainer(input_channel,num_filters, kernel_size, input_dim, hidden_dims, output_dim)
-        #pdm_net = FcNet(input_dim, hidden_dims, output_dim)
         statedict = pdm_net.state_dict()
 
         i = 0
@@ -696,11 +632,9 @@ def compute_pdm_net_accuracy(weights, train_dl, test_dl, n_classes,cls_freqs,arg
             """statedict['layers.%d.weight' % layer_i] = torch.from_numpy(weight.T)
             statedict['layers.%d.bias' % layer_i] = torch.from_numpy(bias)"""
             layer_i += 1
-        #print("Statedict",statedict)
 
         pdm_net.load_state_dict(statedict)
         nets[net_i] = pdm_net
-    #print("nets", nets)
     nets_list = list(nets.values())
 
     train_acc, conf_matrix_train = compute_ensemble_accuracy(nets_list, train_dl, n_classes,train_cls_counts=cls_freqs,
@@ -739,37 +673,12 @@ def train_net(net_id, net, train_dataloader, test_dataloader, epochs, args=args_
 
             out = net(x)
             loss = criterion(out, target)
-            '''
-            if reg_base_weights is None:
-                # Apply standard L2-regularization
-                for param in net.parameters():
-                    l2_reg = l2_reg + 0.5 * torch.pow(param, 2).sum()
-            else:
-            # Apply Iterative PDM regularization
-            for pname, param in net.named_parameters():
-                if "bias" in pname:
-                    continue
-
-                layer_i = int(pname.split('.')[1])
-
-                if pname.split('.')[2] == "weight":
-                    weight_i = layer_i * 2
-                    transpose = True
-
-                ref_param = reg_base_weights[weight_i]
-                ref_param = ref_param.T if transpose else ref_param
-
-                l2_reg = l2_reg + 0.5 * torch.pow((param - torch.from_numpy(ref_param).float()), 2).sum()'''
-
-            #loss = loss + reg * l2_reg
-
             loss.backward()
             optimizer.step()
 
             cnt += 1
             losses.append(loss.item())
 
-        #logging.debug('Epoch: %d Loss: %f L2 loss: %f' % (epoch, loss.item(), reg * l2_reg))
         print('Epoch: %d Loss: %f ' % (epoch, loss.item()))
 
     train_correct, train_total = compute_accuracy(net, train_dataloader)

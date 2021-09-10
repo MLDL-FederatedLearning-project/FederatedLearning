@@ -49,16 +49,16 @@ if __name__ == '__main__':
         torch.cuda.set_device(args.gpu)
     device = 'cuda' if args.gpu else 'cpu'
 
-
     # load dataset and user groups
     train_dataset, test_dataset = get_dataset(args)
     if args.alpha_use and args.balance == 0:
-        _,user_groups,cls_count=get_user_groups_alpha(args)
+        _, user_groups, cls_count = get_user_groups_alpha(args)
     elif args.alpha_use and args.balance == 1:
         _, user_groups = get_users_groups_alpha_balanced(args)
     else:
         _, user_groups, cls_count = get_user_groups(args)
-    print("cls count",cls_count)
+
+
 
 
     # BUILD MODEL
@@ -71,7 +71,6 @@ if __name__ == '__main__':
     # Set the model to train and send it to device.
     global_model.to(device)
     global_model.train()
-    #print(global_model)
 
     # copy weights
     global_weights = global_model.state_dict()
@@ -116,7 +115,6 @@ if __name__ == '__main__':
                 local_model = LocalUpdate(args=args, dataset=train_dataset,
                                           idxs=user_groups[c], logger=logger)
                 acc, loss = local_model.inference(model=global_model)
-                # print("Acc:", acc)
                 list_acc.append(acc)
                 list_loss.append(loss)
 
@@ -185,7 +183,7 @@ if __name__ == '__main__':
 
         plt.figure()
         plt.title('Average Test Accuracy vs Communication rounds')
-        plt.plot(range(len(test_accuracy)), test_acc, color='k')
+        plt.plot(range(len(test_accuracy)), test_accuracy, color='k')
         plt.ylabel('Average Accuracy')
         plt.xlabel('Communication Rounds')
         plt.savefig(dir_path + '/test_accuracy_federated_{}_{}_{}_{}_{}_{}_{}_{}_{}.png'.
@@ -194,7 +192,7 @@ if __name__ == '__main__':
 
         # plt.show()
 
-    elif args.comm_type == "fedma":
+    elif args.comm_type == "pfnm":
 
         local_weights, local_losses = [], []
 
@@ -203,25 +201,14 @@ if __name__ == '__main__':
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
         batch_weights = pdm_prepare_weights(global_model)
         n_nets = int(args.num_users * args.frac)
-        #print("batch_weights",batch_weights)
         n_classes = args.net_config
-        #print("n classes",len(n_classes), type(n_classes))
         n_classes = n_classes[-1]
         cls_freqs=cls_count
-        #_,_,_,_,net_dataidx_map,cls_freqs = partition_data(train_dataset, test_dataset, args.n_nets)
-        #_,server_labels,server_id=get_server(train_dataset)
-        #cls_freqs = non_iid_unbalanced(server_id,args)
-        #cls_freqs=iid_balanced(args,server_id,server_labels)
-        #print("CLS freq",cls_freqs)
         batch_freqs = pdm_prepare_freq(cls_freqs, n_classes)
-        #print("batch frequencies", batch_freqs)
         gammas = [1.0, 1e-3, 50.0]
         sigmas = [1.0, 0.1, 0.5]
         sigma0s = [1.0, 10.0]
 
-        """sigma0s = [1.0]
-        sigmas = [1.0]
-        gammas = [1.0]"""
         best_test_acc, best_train_acc, best_weights, best_sigma, best_gamma, best_sigma0 = -1, -1, None, -1, -1, -1
         for gamma, sigma, sigma0 in product(gammas, sigmas, sigma0s):
             print("Gamma: ", gamma, "Sigma: ", sigma, "Sigma0: ", sigma0)
@@ -229,10 +216,8 @@ if __name__ == '__main__':
                 batch_weights, sigma0_layers=sigma0, sigma_layers=sigma, batch_frequencies=batch_freqs, it=0,
                 gamma_layers=gamma
             )
-            #print("hungarian weights",hungarian_weights)
             with open(args.data_dir+"\hungarian_weights\hungarian_weights_"+str(gamma)+"_"+str(sigma)+"_"+str(sigma0)+".txt", "w") as output:
                 output.write(str(hungarian_weights))
-            #train_dataset, test_dataset = get_dataset(args)
 
             for idx in idxs_users:
                 idxs = (list(user_groups[idx]))
@@ -244,30 +229,16 @@ if __name__ == '__main__':
 
                 train_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_train),
                                          batch_size=args.local_batch_size, shuffle=True, drop_last=False)
-                # maybe add num_workers
                 test_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_test),
                                         batch_size=args.local_batch_size, shuffle=False)
-                '''
-                train_dataset, validloader = get_train_valid_loader(args,
-                                                                  valid_size=0.2,
-                                                                  shuffle=True,
-                                                                  pin_memory=False)
-                test_dataset = get_test_loader(args,
-                                             shuffle=True,
-                                             pin_memory=False)'''
+
                 train_acc, test_acc, _, _,nets = compute_pdm_net_accuracy(hungarian_weights, train_dataset, test_dataset, n_classes,cls_freqs)
                 res = {}
                 key = (sigma0, sigma, gamma)
                 res[key] = {}
-                """for k in key:
-                we should discuss about it later on
-                """
                 res[key]['shapes'] = list(map(lambda x: x.shape, hungarian_weights))
                 res[key]['train_accuracy'] = train_acc
                 res[key]['test_accuracy'] = test_acc
-
-                #print('Sigma0: %s. Sigma: %s. Shapes: %s, Accuracy: %f' %(
-                    #str(sigma0), str(sigma), str(res[key]['shapes']), test_acc))
 
                 if test_acc > best_test_acc:
                     best_test_acc = test_acc
@@ -283,13 +254,9 @@ if __name__ == '__main__':
         print("Running Iterative PDM matching procedure")
         logging.debug("Running Iterative PDM matching procedure")
 
-        """sigma0s = [1.0]
-        sigmas = [1.0]
-        gammas = [1.0]"""
         gamma = best_gamma
         sigma = best_sigma
         sigma0 = best_sigma0
-        """for (sigma0, sigma, gamma) in product(sigma0s, sigmas, gammas):"""
         logging.debug("Parameter setting: sigma0 = %f, sigma = %f, gamma = %f" % (sigma0, sigma, gamma))
 
         iter_nets = copy.deepcopy(nets)
@@ -336,7 +303,6 @@ if __name__ == '__main__':
                 # maybe add num_workers
                 test_dataset = torch.utils.data.DataLoader(DatasetSplit(tr_dataset, idxs_test),
                                                            batch_size=args.local_batch_size, shuffle=False)
-                #net_train_dl, net_test_dl = get_dataloader(args.dataset, args.datadir, 32, 32, dataidxs)
                 train_correct_train_net,train_total_train_net,test_correct_train_net,test_total_train_net = train_net(net_id, net, train_dataset, test_dataset, expepochs, args)
                 train_correct_sum += train_correct_train_net
                 train_total_sum += train_total_train_net

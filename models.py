@@ -51,4 +51,3 @@ class CNNContainer(nn.Module):
 
         return x
 
-

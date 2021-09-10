@@ -12,9 +12,7 @@ from dataset_split import get_test_loader
 
 if __name__ == '__main__':
     args = args_parser()
-    if args.gpu:
-        torch.cuda.set_device(args.gpu)
-    device = 'cuda' if args.gpu else 'cpu'
+    device = 'cpu'
 
     SEED = args.seed
     BATCH_SIZE = args.batch_size
@@ -32,8 +30,7 @@ if __name__ == '__main__':
                                                       shuffle=True,
                                                       pin_memory=False)
     testloader = get_test_loader(args,
-                                 shuffle=True,
-                                 pin_memory=False)
+                                 shuffle=True)
 
     # BUILD MODEL
     args.model = 'cnn'
@@ -43,7 +40,7 @@ if __name__ == '__main__':
     # Set the model to train and send it to device.
     global_model.to(device)
     global_model.train()
-    print("global model",global_model)
+    print(global_model)
 
     # Training
     # Set optimizer and criterion
@@ -60,13 +57,12 @@ if __name__ == '__main__':
 
     epoch_accuracy_train = []
     epoch_accuracy_valid = []
-    epoch_accuracy_test = []
 
     loss_valid = 0
 
     epoch_loss_train = []
     epoch_loss_valid = []
-    epoch_loss_test  = []
+
 
     for epoch in range(args.epochs):
         batch_loss_train = []
@@ -76,10 +72,16 @@ if __name__ == '__main__':
 
             optimizer.zero_grad()
             outputs = global_model(images)
+
+            #print("outputs_size", outputs)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
             _, pred_labels = torch.max(outputs, 1)
+            #print("true_labels", labels)
+            #print("pred_labels", pred_labels)
+            #print("outputs", outputs)
+
             pred_labels = pred_labels.view(-1)
             correct += torch.sum(torch.eq(pred_labels, labels)).item()
             total += len(labels)
@@ -94,6 +96,12 @@ if __name__ == '__main__':
         epoch_loss_train.append(loss_avg_train)
         epoch_accuracy_train.append(acc_avg_train)
 
+        file_name = args.data_dir + '/accuracy_baseline_{}.txt'. \
+            format(args.batch_size)
+
+        with open(file_name, "a") as f:
+            f.write(str(acc_avg_train) +", " + str(loss_avg_train)+ " \n")
+
         print('Epoch:', epoch+1)
         print('Train accuracy : {:.2f}%'.format(acc_avg_train), 'Train loss : {:.4f}'.format(loss_avg_train))
 
@@ -101,11 +109,10 @@ if __name__ == '__main__':
         total = 0
 
         accuracy_valid, loss_valid = validation(args, global_model, validloader)
-        accuracy_test, loss_test = test_inference(args, global_model, testloader)
+
         epoch_loss_valid.append(loss_valid)
         epoch_accuracy_valid.append(accuracy_valid)
-        epoch_loss_test.append(loss_test)
-        epoch_accuracy_test.append(accuracy_test)
+
 
         print('Valid accuracy : {:.2f}%'.format(accuracy_valid), 'Valid loss : {:.4f}'.format(loss_valid))
 
@@ -114,14 +121,14 @@ if __name__ == '__main__':
 
     train_loss, = ax1.plot(range(len(epoch_loss_train)), epoch_loss_train)
     valid_loss, = ax1.plot(range(len(epoch_loss_valid)), epoch_loss_valid)
-    test_loss, = ax1.plot(range(len(epoch_loss_test)), epoch_loss_test)
-    ax1.legend([train_loss, valid_loss], ['train loss', 'valid loss', 'test loss'])
+
+    ax1.legend([train_loss, valid_loss], ['train loss', 'valid loss'])
     ax1.set_xlabel("Epoch")
     ax1.set_ylabel("Loss")
     train_acc, = ax2.plot(range(len(epoch_accuracy_train)), epoch_accuracy_train)
     valid_acc, = ax2.plot(range(len(epoch_accuracy_valid)), epoch_accuracy_valid)
-    test_acc, = ax2.plot(range(len(epoch_accuracy_test)), epoch_accuracy_test)
-    ax2.legend([train_acc, valid_acc], ['train accuracy', 'valid accuracy', 'test accuracy'])
+
+    ax2.legend([train_acc, valid_acc], ['train accuracy', 'valid accuracy'])
     ax2.set_xlabel("Epoch")
     ax2.set_ylabel("Accuracy")
 

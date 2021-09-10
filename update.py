@@ -27,7 +27,7 @@ class LocalUpdate(object):
         self.logger = logger
         self.trainloader, self.testloader = self.train_test(
             dataset, list(idxs))
-        self.device = 'cuda' if args.gpu else 'cpu'
+        self.device = 'cpu'
         # Default criterion set to NLL loss function
         self.criterion = nn.NLLLoss().to(self.device)
 
@@ -42,15 +42,13 @@ class LocalUpdate(object):
 
         trainloader = DataLoader(DatasetSplit(dataset, idxs_train),
                                  batch_size=self.args.local_batch_size, shuffle=True, drop_last = False)
-        #maybe add num_workers
+
         testloader = DataLoader(DatasetSplit(dataset, idxs_test),
                                 batch_size=self.args.local_batch_size, shuffle=False)
         return trainloader, testloader
 
     def update_weights(self, model, global_round):
         # Set mode to train model
-        print("train:",model)
-        print("train:",model.train())
         model.train()
         epoch_loss = []
 
@@ -71,7 +69,6 @@ class LocalUpdate(object):
                 loss.backward()
                 optimizer.step()
 
-                #if self.args.verbose and (batch_idx % 10 == 0):
                 print('| Global Round : {} | Local Epoch : {} | [{}/{} ({:.0f}%)]\tLoss: {:.4f} '.format(
                         global_round+1, iter+1, len(images),
                         len(self.trainloader.dataset),
@@ -101,27 +98,28 @@ class LocalUpdate(object):
 
             # Prediction
             _, pred_labels = torch.max(outputs, 1)
+            print("pred_labels", pred_labels)
             pred_labels = pred_labels.view(-1)
             correct += torch.sum(torch.eq(pred_labels, labels)).item()
             total += len(labels)
-            #print("correct: ", correct,"total: ",total)
-            #print("pred: ", pred_labels, "labels: ", labels)
 
         accuracy = 100*correct/total
         return accuracy, loss
 
 batch_loss= []
 
-def test_inference(args, model, test_dataset):
+def test_inference(args, model, testloader):
     """ Returns the test accuracy and loss.
     """
 
     model.eval()
     loss, total, correct = 0.0, 0.0, 0.0
 
-    device = 'cuda' if args.gpu else 'cpu'
+    device =  'cpu'
     criterion = nn.NLLLoss().to(device)
-    testloader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+    #testloader = get_test_loader(args,
+                    #shuffle=True,
+                    #pin_memory=False)
 
     for batch_idx, (images, labels) in enumerate(testloader):
         images, labels = images.to(device), labels.to(device)
@@ -146,7 +144,7 @@ def test_inference(args, model, test_dataset):
 def validation(args,model,validloader):
         """ Returns the inference accuracy and loss.
         """
-        device = 'cuda' if args.gpu else 'cpu'
+        device = 'cpu'
         model.eval()
         criterion = nn.NLLLoss().to(device)
         loss, total, correct, loss_final = 0.0, 0.0, 0.0, 0.0
